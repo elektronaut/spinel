@@ -11818,6 +11818,16 @@ char *codegen_program(const NodeTable *nt) {
         else if (t == TY_POLY) buf_printf(&mk, "  sp_mark_rbval(civ_%s_%s);\n", ci->name, iv);
         else if (needs_root(t)) buf_printf(&mk, "  if (civ_%s_%s) sp_gc_mark((void *)civ_%s_%s);\n", ci->name, iv, ci->name, iv);
       }
+      /* a class variable's slot is a file-scope static like the ones above;
+         unmarked, an Array or String held only in `@@a` was swept and its
+         memory reused (#4864). */
+      for (int j = 0; j < ci->ncvars; j++) {
+        TyKind t = ci->cvar_types[j] == TY_UNKNOWN ? TY_INT : ci->cvar_types[j];
+        const char *cv = ci->cvars[j] + 2;
+        if (t == TY_STRING) buf_printf(&mk, "  sp_mark_string(cvar_%s_%s);\n", ci->name, cv);
+        else if (t == TY_POLY) buf_printf(&mk, "  sp_mark_rbval(cvar_%s_%s);\n", ci->name, cv);
+        else if (needs_root(t)) buf_printf(&mk, "  if (cvar_%s_%s) sp_gc_mark((void *)cvar_%s_%s);\n", ci->name, cv, ci->name, cv);
+      }
       for (int j = 0; j < ci->nsg_readers; j++)
         buf_printf(&mk, "  sp_mark_rbval(sg_%s_%s);\n", ci->name, ci->sg_readers[j]);
     }
