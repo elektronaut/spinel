@@ -1,4 +1,4 @@
-status: claimed
+status: done
 branch: fix-surplus-arg-refusal
 
 # arity-refusals
