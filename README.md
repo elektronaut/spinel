@@ -38,7 +38,8 @@ sessions. This branch holds no code, only briefs and reports.
       - on macOS only, two infer-test rows mentioning #4847.
       - spin-e2e prints `warning: push negotiation failed`: it pushes to a
         local temp repo, harmless.
-      Anything else failing must be fixed or explained.
+      Anything else failing must be fixed or explained. Commit only after the
+      whole gate, rubyspec included, has finished clean.
    5. Commit with a one-line subject in the repo's style (see `git log`), a short
       body naming the cause, and this trailer:
       `Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>`
