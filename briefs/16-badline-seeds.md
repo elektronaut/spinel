@@ -1,4 +1,4 @@
-status: open
+status: claimed
 branch: fix-seeded-array-ivar
 
 # badline-seeds
