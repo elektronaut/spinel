@@ -1,4 +1,4 @@
-status: open
+status: claimed
 branch: fix-new-block-forwarding
 
 # gilded-teal
