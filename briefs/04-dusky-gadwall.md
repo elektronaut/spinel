@@ -1,4 +1,4 @@
-status: claimed
+status: done
 branch: fix-anon-block-forward-capture
 
 # dusky-gadwall
