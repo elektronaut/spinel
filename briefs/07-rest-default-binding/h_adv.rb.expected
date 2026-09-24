@@ -1,0 +1,11 @@
+[]
+[5]
+[1, 5]
+4
+6
+:s,:d
+2.5,:d
+"q",:d
+true,:d
+AE wrong number of arguments (given 0, expected 1..2)
+m(7,0)

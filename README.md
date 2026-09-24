@@ -3,9 +3,12 @@
 Communication channel between the local spinel triage session and cloud
 sessions. This branch holds no code, only briefs and reports.
 
-- `briefs/<handle>.md` — one bug per file, written by the triage session.
-  The first line is `status: open | claimed | done | blocked`.
-- `reports/<handle>.md` — written by the cloud session that took the brief.
+- `briefs/NN-<handle>.md`: one brief per file, written by the triage session.
+  The first line is `status: open | claimed | done | blocked`, the second the
+  branch name to use. Reproducers live next to it in `briefs/NN-<handle>/`,
+  each with a `.expected` file holding CRuby 4.0's output. The container's
+  Ruby is older; trust the `.expected` file over it.
+- `reports/NN-<handle>.md`: written by the cloud session that took the brief.
 
 ## Protocol for a cloud session
 
@@ -20,6 +23,7 @@ sessions. This branch holds no code, only briefs and reports.
    - `git remote add upstream https://github.com/matz/spinel.git` (skip if it exists)
    - `git fetch upstream`
    - `git worktree add -b <branch from brief> ../work upstream/master && cd ../work`
+   - `git config user.name "Inge Jørgensen" && git config user.email inge@elektronaut.no`
    - `make deps && make -j` (the compiler is `bin/spinel`)
    - `export LANG=C.UTF-8`. With an empty LANG, the rubyspec extractor silently
      skips examples and the rubyspec checks under-test while still printing "pass".
@@ -59,3 +63,8 @@ sessions. This branch holds no code, only briefs and reports.
   issue and opens the PR.
 - Never push to `master` or to a branch you didn't create.
 - One brief per session unless told otherwise.
+- A brief listing several bugs may have several root causes. Make one branch
+  per root cause (the brief's branch name plus a suffix), each with its own
+  tests, and list every branch in the report. Bugs you couldn't fix go in the
+  report too, with what you learned.
+- If one bug is already fixed on upstream/master, say so in the report and move on.
