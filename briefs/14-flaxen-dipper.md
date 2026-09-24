@@ -1,4 +1,4 @@
-status: open
+status: claimed
 branch: fix-array-new-block-string-local
 
 # flaxen-dipper
