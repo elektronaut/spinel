@@ -1,4 +1,4 @@
-status: claimed
+status: done
 branch: fix-module-ivar-hash-getter
 
 # sepia-dotterel
