@@ -1,4 +1,4 @@
-status: open
+status: claimed
 branch: fix-rest-default-binding
 
 # rest-default-binding
