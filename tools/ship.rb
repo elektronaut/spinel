@@ -67,8 +67,8 @@ def ship_pr(meta, body, map)
 end
 
 def ship_reply(meta, body)
-  gh_with_body(["api", "repos/#{UPSTREAM}/pulls/#{meta.fetch('pr')}/comments/#{meta.fetch('comment_id')}/replies",
-                "-f", "body=#{body}", "--jq", ".html_url"], "")
+  run("gh", "api", "repos/#{UPSTREAM}/pulls/#{meta.fetch('pr')}/comments/#{meta.fetch('comment_id')}/replies",
+      "-f", "body=#{body}", "--jq", ".html_url")
 end
 
 def once
