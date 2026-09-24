@@ -9,3 +9,9 @@ p f(3)
 def h(n) = n > 0 ? k(n - 1, 10) + k(n - 1) : 0
 def k(n, a = h(n)) = a + 1
 p h(4)
+
+# the cycle closes through a default of a method called from a default
+def g2(n) = n > 0 ? f2(n - 1) : 0
+def f2(n, a = k2(n)) = a + 1
+def k2(n, b = g2(n)) = b * 2
+p g2(3)
