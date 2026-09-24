@@ -1,4 +1,4 @@
-status: open
+status: claimed
 branch: fix-poly-recv-default-ivar
 
 # zinc-shrew: poly-receiver arm with an ivar default emits a mis-parenthesized cast
