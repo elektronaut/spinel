@@ -1,0 +1,4 @@
+#<struct S x=5, y=nil>
+#<struct S x=5, y="t">
+#<data D x=7>
+#<data D x=3>

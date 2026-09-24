@@ -1,0 +1,5 @@
+r40/adj_callback_no_header.rb:6:in '<module:L>': undefined method 'ffi_callback' for module L (NoMethodError)
+
+  ffi_callback :cmp, [:ptr, :ptr], :int
+  ^^^^^^^^^^^^
+	from r40/adj_callback_no_header.rb:5:in '<main>'
