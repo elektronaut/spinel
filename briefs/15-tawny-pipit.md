@@ -1,4 +1,4 @@
-status: claimed
+status: done
 branch: fix-poly-zero-arg-arity
 
 # tawny-pipit
