@@ -137,8 +137,13 @@ spin-e2e ALL GREEN, and all six rubyspec checks pass.
   its own emitter, and I left it alone.
 - **Declining the splice changes how the call is compiled.** When the base
   method is inline-only and overridden, a call to it now goes through the switch
-  and a real `sp_Proc`, where it used to be spliced inline. A literal block with
-  `break`/`next`, or one that writes caller locals, then runs through the proc
-  path. The tests cover closures that read caller locals, but not `break` out of
-  such a block.
+  and a real `sp_Proc`, where it used to be spliced inline. I checked this:
+  - `next` in such a block works: `[3, 14]`, as in CRuby.
+  - `break` does not. `def run = m(5) { |v| break v * 100 }` fails to compile
+    on master even with no override ("void value not ignored as it ought to
+    be"), so this is a separate bug that already existed. With the override
+    present, branch A now compiles it, but it raises
+    `break from proc-closure (LocalJumpError)` instead of answering 500. That
+    is still wrong, though it's no longer a compile failure. It's worth a
+    brief of its own.
 - Worktrees used: `../work3` (A) and `../work4` (B).
