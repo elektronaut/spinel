@@ -147,3 +147,9 @@ spin-e2e ALL GREEN, and all six rubyspec checks pass.
     is still wrong, though it's no longer a compile failure. It's worth a
     brief of its own.
 - Worktrees used: `../work3` (A) and `../work4` (B).
+- Brief 11 (`class-value-new`, claimed by another session) works in the same
+  area, the class-value `new` arms in `codegen_call.c`. Branch B doesn't touch
+  those arms. It changes `sp_X_new` itself and the splice site
+  (`emit_ctor_yield_inline`), so the two shouldn't conflict textually. But once
+  both land, a class-value `new` of a Struct or of a user `self.new` class with
+  a yielding `initialize` would exercise both fixes together.
