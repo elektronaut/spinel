@@ -1,4 +1,4 @@
-status: open
+status: claimed
 branch: fix-anon-block-capture-cells
 
 # anon-block-capture (handle: ashen-plover). Silent wrong value.
