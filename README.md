@@ -62,7 +62,12 @@ sessions. This branch holds no code, only briefs and reports.
 When a reviewer (CodeRabbit, matz, anyone) comments on a PR made from a fix
 branch, the triage session writes `briefs/00-review-<handle>-<pr>.md`. The `00`
 makes it sort before every bug brief, so review work is always claimed first.
-It holds the PR number, the fix branch, and each review comment verbatim.
+It holds the PR number, the fix branch, a `deadline:` line (Oslo time), and
+each review comment verbatim. The deadline is when matz's merge loop runs;
+a fix pushed after it is wasted, because matz addresses open findings himself.
+If you can't push before the deadline, stop, set the brief to `blocked`, and
+say so in the report. If the deadline has already passed when you claim it,
+skip it.
 
 To work one:
 1. Claim it like any brief.
@@ -76,6 +81,13 @@ To work one:
 6. The report lists every finding as `fixed` (with the commit), `not valid`
    (why), or `deferred` (why). Don't reply on the PR: the triage session answers
    the reviewer from the report.
+
+## Looping
+
+After finishing a brief, `git pull --rebase` this branch, re-read this README
+(it changes), and claim the next open brief. Review briefs (`00-…`) always go
+first. If nothing is open, check again every 5 minutes; stop after an hour
+with nothing open.
 
 ## Rules
 
