@@ -1,4 +1,4 @@
-status: open
+status: claimed
 branch: fix-surplus-arg-refusal
 
 # arity-refusals
