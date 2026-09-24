@@ -1,4 +1,4 @@
-status: open
+status: claimed
 branch: fix-ffi-callback-prototype
 
 # pallid-rook
