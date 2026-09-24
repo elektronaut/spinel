@@ -1,4 +1,4 @@
-status: open
+status: claimed
 branch: fix-rubyspec-extract-locale
 
 # hazel-pipit
