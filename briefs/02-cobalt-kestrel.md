@@ -1,4 +1,4 @@
-status: claimed
+status: done
 branch: fix-forwarded-block-ivar-write
 
 # cobalt-kestrel
