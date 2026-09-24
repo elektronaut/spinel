@@ -62,7 +62,11 @@ sessions. This branch holds no code, only briefs and reports.
 - Never open a PR or an issue, on any repository. The triage session files the
   issue and opens the PR.
 - Never push to `master` or to a branch you didn't create.
-- One brief per session unless told otherwise.
+- One brief per session unless told otherwise. When a session takes another
+  brief, it starts again from step 1: fetch this branch and upstream, and make
+  a new worktree from the fresh upstream/master. Never base a fix on an earlier
+  fix branch. The build and `vendor/` can be reused by copying or symlinking
+  `vendor/` into the new worktree.
 - A brief listing several bugs may have several root causes. Make one branch
   per root cause (the brief's branch name plus a suffix), each with its own
   tests, and list every branch in the report. Bugs you couldn't fix go in the
