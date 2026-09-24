@@ -1,4 +1,4 @@
-status: open
+status: claimed
 branch: fix-block-forward-errors
 
 # block-forward-errors (handles: dun-grebe, pearl-avocet)
