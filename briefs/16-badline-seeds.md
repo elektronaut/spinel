@@ -1,4 +1,4 @@
-status: claimed
+status: done
 branch: fix-seeded-array-ivar
 
 # badline-seeds
