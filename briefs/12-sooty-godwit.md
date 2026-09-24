@@ -1,4 +1,4 @@
-status: claimed
+status: done
 branch: fix-super-accessor-mid-redeclare
 
 # sooty-godwit
