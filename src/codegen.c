@@ -2274,6 +2274,37 @@ static void fi_collect_calls(Compiler *c, int id, int *out, int *n, int max, int
 }
 
 static int fi_reaches(Compiler *c, int from, int target, unsigned char *seen,
+                      unsigned char *cand, int depth);
+
+/* The calls inside callee `ci`'s parameter defaults are emitted at the call
+   site, so they are the calling body's calls; a default's own callee brings
+   its defaults in the same way. A scan cut short counts as reaching. */
+static int fi_default_reaches(Compiler *c, int ci, int target, unsigned char *seen,
+                              unsigned char *cand, int depth) {
+  if (depth > 64) return 1;
+  Scope *cs = &c->scopes[ci];
+  for (int p = 0; cs->pdefault && p < cs->nparams; p++) {
+    if (cs->pdefault[p] < 0) continue;
+    int dcalls[64]; int nd = 0;
+    int was_trunc = g_fi_trunc; g_fi_trunc = 0;
+    fi_collect_calls(c, cs->pdefault[p], dcalls, &nd, 64, 0);
+    int trunc = g_fi_trunc; g_fi_trunc = was_trunc;
+    if (trunc) return 1;
+    for (int d = 0; d < nd; d++) {
+      int dcal[32]; int n3 = 0;
+      fi_callees(c, dcalls[d], dcal, &n3, 32);
+      for (int k = 0; k < n3; k++) {
+        if (dcal[k] != ci && fi_default_reaches(c, dcal[k], target, seen, cand, depth + 1)) return 1;
+        if (!cand[dcal[k]]) continue;
+        if (dcal[k] == target) return 1;
+        if (fi_reaches(c, dcal[k], target, seen, cand, depth + 1)) return 1;
+      }
+    }
+  }
+  return 0;
+}
+
+static int fi_reaches(Compiler *c, int from, int target, unsigned char *seen,
                       unsigned char *cand, int depth) {
   if (depth > 64) return 1;                      /* too deep: assume it does */
   if (seen[from]) return 0;
@@ -2284,6 +2315,7 @@ static int fi_reaches(Compiler *c, int from, int target, unsigned char *seen,
     int cal[32]; int n2 = 0;
     fi_callees(c, calls[i], cal, &n2, 32);
     for (int j = 0; j < n2; j++) {
+      if (fi_default_reaches(c, cal[j], target, seen, cand, depth + 1)) return 1;
       if (!cand[cal[j]]) continue;               /* not forced: no cycle through it */
       if (cal[j] == target) return 1;
       if (fi_reaches(c, cal[j], target, seen, cand, depth + 1)) return 1;
