@@ -1,4 +1,4 @@
-status: open
+status: claimed
 branch: fix-poly-zero-arg-arity
 
 # tawny-pipit
