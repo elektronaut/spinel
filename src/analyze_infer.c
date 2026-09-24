@@ -7551,6 +7551,13 @@ TyKind infer_uncached(Compiler *c, int id) {
       int mi = comp_method_in_class(c, s->class_id, shadow);
       return mi >= 0 ? c->scopes[mi].ret : TY_UNKNOWN;
     }
+    /* Class#new: an instance of the receiving class, which is this one or,
+       through an inherited `self.new`, any descendant -- then boxed */
+    if (comp_super_is_class_new(c, id)) {
+      for (int k = 0; k < c->nclasses; k++)
+        if (k != s->class_id && is_descendant(c, k, s->class_id)) return TY_POLY;
+      return ty_object(s->class_id);
+    }
     const char *uname = comp_prep_user_name(s->name);
     int p = c->classes[s->class_id].parent;
     if (p < 0) return TY_UNKNOWN;

@@ -935,6 +935,7 @@ int        comp_is_sg_civ(ClassInfo *ci, const char *name);
 void        comp_prep_chain_add(ClassInfo *ci, const char *from, const char *to);
 const char *comp_prep_chain_target(Compiler *c, int class_id, const char *name);
 const char *comp_prep_user_name(const char *name);
+int comp_super_is_class_new(Compiler *c, int id); /* super in `self.new` is Class#new */
 /* Resolve `name` through the class's (chain-aware) alias table to the
    underlying method/attr name. Returns `name` unchanged if not aliased. */
 /* What a name means on a class: nothing, an attribute (attr_reader/writer,
