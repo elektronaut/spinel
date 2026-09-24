@@ -1,4 +1,4 @@
-status: claimed
+status: done
 branch: fix-class-value-new-arms
 
 # class-value-new
