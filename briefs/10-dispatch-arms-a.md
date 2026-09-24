@@ -1,4 +1,4 @@
-status: claimed
+status: done
 branch: fix-dispatch-arm-gaps
 
 # dispatch-arms-a
