@@ -4,16 +4,12 @@ One cloud session is the coordinator. It does not fix bugs. It turns worker
 reports into upstream issues and PRs, watches those PRs, and writes review
 briefs in time for matz's merge loop. Worker sessions follow README.md.
 
-## Step 0: capability check (first run only)
+## Writing to matz/spinel
 
-Find out, without creating anything, whether this session can:
-1. read issues, PRs and review comments on matz/spinel (`gh`, the GitHub API,
-   or a GitHub tool);
-2. create issues, create PRs from elektronaut:<branch> into matz/spinel:master,
-   and reply to review comments there.
-
-Write the answer to `coordinator/capabilities.md` and push. If (2) is not
-possible, use **outbox mode** (below) for everything that writes to matz/spinel.
+This session can't write to matz/spinel; only the owner's machine can. Every
+issue, PR and review reply goes through the **outbox** (see below), which a
+local script files every 2 minutes. You can read matz/spinel (public API,
+`git fetch`) to watch PRs and reviews.
 
 ## matz's merge loop
 
@@ -42,31 +38,49 @@ Every ~5 minutes:
    conflicts or upstream touched the same files, run the gate. Then, only
    while it's before :40 past an even hour (otherwise wait for the next
    window):
-   - File one issue per bug on matz/spinel: a minimal reproducer, CRuby's vs
-     Spinel's output, and the cause in a sentence. **Don't describe the patch.**
-   - Amend the commit to add `Fixes #N` lines above the trailer, push with
-     `--force-with-lease=<branch>:<old sha>`, and open the PR. The body says what
-     was wrong, how it's fixed, what the tests are, and what isn't covered.
-   - Record it in `coordinator/prs.md`: PR, issues, branch, handles, time opened.
+   - Write one outbox issue per bug: a minimal reproducer, CRuby's vs Spinel's
+     output, and the cause in a sentence. **Don't describe the patch.**
+   - Amend the fix commit to add a `Fixes {{issue:<id>}}` line per issue above
+     the trailer and push the branch (`--force-with-lease=<branch>:<old sha>`).
+     The script replaces the placeholders with real numbers before opening the PR.
+   - Write the outbox PR after its issues. The body says what was wrong, how it's
+     fixed, what the tests are, and what isn't covered, and starts with
+     `Fixes {{issue:<id>}}.`
+   - Record it in `coordinator/prs.md`: branch, handles, outbox ids. Fill in
+     the numbers from `outbox/filed.md` once they're filed.
 2. **Open PRs:** read new review comments (CodeRabbit or people). For each
    finding, if the next tick is 35+ min away, write
    `briefs/00-review-<handle>-<pr>.md` (status open, `branch:`, `deadline:` the
    tick in Oslo time, the PR number, each finding verbatim) and push. Otherwise
    skip it. Findings marked as nitpicks or trivial can be skipped.
-3. **Review reports:** when a `00-review` report says fixed, reply on each review
-   thread in 1–3 sentences: confirmed or not, what changed, the commit.
+3. **Review reports:** when a `00-review` report says fixed, write an outbox
+   reply for each review thread in 1–3 sentences: confirmed or not, what
+   changed, the commit.
 4. **Merged or closed PRs:** move them to a "Done" section in `coordinator/prs.md`.
 
 Keep `coordinator/log.md` short: one line per action, with Oslo time.
 
-## Outbox mode
+## Outbox
 
-If this session can't write to matz/spinel, put each action in
-`outbox/NNN-<kind>.md`, where kind is `issue`, `pr` or `reply`. Front matter
-holds the fields (title, repo, head, base, pr, comment_id, and `fixes:` issue
-placeholders like `{{issue:NNN}}`), and the body follows. Push. The owner runs a
-local script that files them in order, then deletes them and records the
-numbers in `outbox/filed.md`. Read that file to learn the issue and PR numbers.
+One file per action, `outbox/NNN-<kind>.md`, with NNN increasing (the script
+files them in name order and stops at the first failure):
+
+```
+---
+kind: issue            # issue | pr | reply
+id: a1                 # issue only: your id for {{issue:a1}} placeholders
+title: ...             # issue and pr
+head: fix-branch       # pr only
+pr: 4958               # reply only
+comment_id: 4098247628 # reply only: the review comment's id
+---
+Markdown body. {{issue:a1}} placeholders become #N.
+```
+
+Push the outbox files together with the commit that uses them. The script
+deletes each file once filed and appends a line to `outbox/filed.md`, like
+`issue:a1 = #4961` or `pr fix-branch = #4962`, or `FAILED <reason>`. Read it
+back to learn the numbers, and fix and re-push any failed item.
 
 ## Rules
 
