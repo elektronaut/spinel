@@ -112,6 +112,24 @@ rubyspec-gate[core/integer]: all 171 expected-PASS examples still pass
 rubyspec-gate[core/range]: all 83 expected-PASS examples still pass
 ```
 
+## Merging (added after brief 22)
+
+- **Overlap with brief 03.** `fix-forwarded-block-ivar-write-new` and brief
+  03's `fix-new-block-forwarding` made nearly the same `Klass.new(&)` fix, and
+  they conflict in `emit_class_new_call` when merged together. Take brief 03's
+  hunk. The `super` half of `-new` (`emit_super_block_arg`: `super(&)`,
+  `super(&blk)`, zsuper and `super()` from an inlined body) isn't in brief 03,
+  so keep it.
+- **Merge order.** `-new` is stacked on `fix-forwarded-block-ivar-write`, so
+  merge that first.
+- **Brief 22 depends on this.** Brief 22's `fix-anon-block-capture-cells`
+  relies on the `.new` fix (from 03 or here) and on this branch's `super`
+  fix. Without them, an anonymous `Reg.new(&)` or `super(&)` fails to compile
+  instead of silently dropping the block.
+- **Combined stack tested.** 22 + 03 + 04 + both branches here, with the
+  conflict resolved toward 03, built in a scratch worktree. All seven related
+  tests pass on it (see brief 22's report). I didn't gate the combination.
+
 ## Found, not fixed (pre-existing on master, separate root causes)
 
 1. **A class method's `new(&h)` drops the block.**
