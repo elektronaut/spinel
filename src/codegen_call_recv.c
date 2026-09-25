@@ -256,22 +256,35 @@ static int conv_to_ary_impossible(TyKind t) {
    local form renames the slot so the value arm's reads and its write-back both
    land on a plain shadow; an ivar has no name to rename, so the shadow is
    published to the ivar emitter instead and the same re-run works unchanged.
-   `rerun` is the emitter whose arms are being borrowed (#4363). */
+   `rerun` is the emitter whose arms are being borrowed (#4363). A reader call
+   handing out an ivar's handle (`c.name.slice!(0)`) takes the same re-run
+   through sb_call_shadow_open. */
 static int sb_iv_expr_shim(Compiler *c, int id, int recvS, Buf *b,
                            int (*rerun)(Compiler *, int, Buf *)) {
   const NodeTable *nt = c->nt;
   if (strbuf_local_name(c, recvS)) return 0;
-  if (nt_kind(nt, recvS) != NK_InstanceVariableReadNode || g_sb_iv_name) return 0;
   char srefI[1024];
-  int icid = strbuf_ivar_owner(c, recvS);
-  const char *ivn = nt_str(nt, recvS, "name");
-  if (!ivn || icid < 0 || !strbuf_slot_ref(c, recvS, srefI, sizeof srefI)) return 0;
-  int tH = ++g_tmp;
+  int tH;
   Buf armb; memset(&armb, 0, sizeof armb);
-  snprintf(g_sb_iv_repl, sizeof g_sb_iv_repl, "lv__sb%d", tH);
-  g_sb_iv_name = ivn; g_sb_iv_cid = icid;
-  int handled = rerun(c, id, &armb);
-  g_sb_iv_name = NULL; g_sb_iv_cid = -1;
+  int handled;
+  if (nt_kind(nt, recvS) == NK_CallNode) {
+    SbCallShadow svC;
+    tH = ++g_tmp;
+    if (!sb_call_shadow_open(c, recvS, tH, srefI, sizeof srefI, &svC)) return 0;
+    handled = rerun(c, id, &armb);
+    sb_call_shadow_close(c, &svC);
+  }
+  else {
+    if (nt_kind(nt, recvS) != NK_InstanceVariableReadNode || g_sb_iv_name) return 0;
+    int icid = strbuf_ivar_owner(c, recvS);
+    const char *ivn = nt_str(nt, recvS, "name");
+    if (!ivn || icid < 0 || !strbuf_slot_ref(c, recvS, srefI, sizeof srefI)) return 0;
+    tH = ++g_tmp;
+    snprintf(g_sb_iv_repl, sizeof g_sb_iv_repl, "lv__sb%d", tH);
+    g_sb_iv_name = ivn; g_sb_iv_cid = icid;
+    handled = rerun(c, id, &armb);
+    g_sb_iv_name = NULL; g_sb_iv_cid = -1;
+  }
   if (!handled) { free(armb.p); return 0; }
   TyKind resty = comp_ntype(c, id);
   buf_printf(b, "({ sp_String *_t%d = %s;"
@@ -495,7 +508,9 @@ int emit_array_call(Compiler *c, int id, Buf *b) {
     const NodeTable *ntS = c->nt;
     const char *nmS = nt_str(ntS, id, "name");
     int recvS = nt_ref(ntS, id, "receiver");
-    if (nmS && recvS >= 0 && comp_ntype(c, recvS) == TY_STRING &&
+    TyKind rtS = recvS >= 0 ? comp_ntype(c, recvS) : TY_UNKNOWN;
+    if (nmS && recvS >= 0 &&
+        (rtS == TY_STRING || (rtS == TY_STRBUF && nt_kind(ntS, recvS) == NK_CallNode)) &&
         (sp_streq(nmS, "slice!") || sp_streq(nmS, "setbyte") ||
          sp_streq(nmS, "insert") || sp_streq(nmS, "clear") ||
          sp_streq(nmS, "[]="))) {
@@ -805,7 +820,8 @@ int emit_array_call(Compiler *c, int id, Buf *b) {
     if (sbi >= 0) {
       const char *rvt2 = nt_type(nt, recv);
       int lvw = rvt2 && (sp_streq(rvt2, "LocalVariableReadNode") ||
-                         sp_streq(rvt2, "InstanceVariableReadNode"));
+                         sp_streq(rvt2, "InstanceVariableReadNode")) ||
+                recv == g_sb_shadow_recv;
       /* A shared-mutable (STRBUF) local mutates its buffer IN PLACE so every
          alias/container observes it: recompute via the non-bang transform of
          the current contents, then replace the buffer (#3227). */
@@ -946,7 +962,8 @@ int emit_array_call(Compiler *c, int id, Buf *b) {
          sp_streq(name, "prepend")) && argc >= 1) {
       const char *rvt2 = nt_type(nt, recv);
       int lvw = rvt2 && (sp_streq(rvt2, "LocalVariableReadNode") ||
-                         sp_streq(rvt2, "InstanceVariableReadNode"));
+                         sp_streq(rvt2, "InstanceVariableReadNode")) ||
+                recv == g_sb_shadow_recv;
       int tn2 = ++g_tmp, trc = ++g_tmp;
       /* Evaluate the receiver once into a temp: it feeds both the frozen-mutability
          check and the concatenation, and a chained `s << a << b` receiver has a
@@ -979,7 +996,8 @@ int emit_array_call(Compiler *c, int id, Buf *b) {
     if (sp_streq(name, "insert") && argc == 2) {
       const char *rvt2 = nt_type(nt, recv);
       int lvw = rvt2 && (sp_streq(rvt2, "LocalVariableReadNode") ||
-                         sp_streq(rvt2, "InstanceVariableReadNode"));
+                         sp_streq(rvt2, "InstanceVariableReadNode")) ||
+                recv == g_sb_shadow_recv;
       int to = ++g_tmp, ti2 = ++g_tmp, tn2 = ++g_tmp;
       /* rooted across the index and the text, which may allocate */
       buf_printf(b, "({ const char *_t%d = ", to); emit_recv_rooted(c, recv, to, "SP_GC_ROOT_STR", b);
@@ -1006,7 +1024,8 @@ int emit_array_call(Compiler *c, int id, Buf *b) {
         }
       }
       int lvw = rvt2 && (sp_streq(rvt2, "LocalVariableReadNode") ||
-                         sp_streq(rvt2, "InstanceVariableReadNode"));
+                         sp_streq(rvt2, "InstanceVariableReadNode")) ||
+                recv == g_sb_shadow_recv;
       int tn2 = ++g_tmp;
       buf_printf(b, "({ sp_str_check_mutable(");   /* frozen -> FrozenError (#3003) */
       emit_expr(c, recv, b);
@@ -1022,7 +1041,8 @@ int emit_array_call(Compiler *c, int id, Buf *b) {
   if (rt == TY_STRING && sp_streq(name, "slice!") && (argc == 1 || argc == 2)) {
     const char *rvt2 = nt_type(nt, recv);
     int sb_asgn = rvt2 && (sp_streq(rvt2, "LocalVariableReadNode") ||
-                           sp_streq(rvt2, "InstanceVariableReadNode"));
+                           sp_streq(rvt2, "InstanceVariableReadNode")) ||
+                  recv == g_sb_shadow_recv;
     if (argc == 1 && comp_ntype(c, argv[0]) == TY_STRING) {
       int tp2 = ++g_tmp;
       buf_printf(b, "({ const char *_t%d = ", tp2); emit_expr(c, argv[0], b);
@@ -1250,7 +1270,8 @@ int emit_array_call(Compiler *c, int id, Buf *b) {
       } }
     const char *rvt2 = nt_type(nt, recv);
     int lvw = rvt2 && (sp_streq(rvt2, "LocalVariableReadNode") ||
-                       sp_streq(rvt2, "InstanceVariableReadNode"));
+                       sp_streq(rvt2, "InstanceVariableReadNode")) ||
+              recv == g_sb_shadow_recv;
     int tn2 = ++g_tmp;
     /* in-place mutator: a frozen receiver raises before the splice (#3333) */
     buf_puts(b, "({ sp_str_check_mutable("); emit_expr(c, recv, b); buf_puts(b, "); ");
@@ -6985,7 +7006,9 @@ int emit_scalar_call(Compiler *c, int id, Buf *b) {
     const NodeTable *ntS = c->nt;
     const char *nmS = nt_str(ntS, id, "name");
     int recvS = nt_ref(ntS, id, "receiver");
-    if (nmS && recvS >= 0 && comp_ntype(c, recvS) == TY_STRING &&
+    TyKind rtS = recvS >= 0 ? comp_ntype(c, recvS) : TY_UNKNOWN;
+    if (nmS && recvS >= 0 &&
+        (rtS == TY_STRING || (rtS == TY_STRBUF && nt_kind(ntS, recvS) == NK_CallNode)) &&
         sp_streq(nmS, "setbyte")) {
       if (sb_iv_expr_shim(c, id, recvS, b, emit_scalar_call)) return 1;
       const char *sbn = strbuf_local_name(c, recvS);
@@ -7795,7 +7818,8 @@ int emit_scalar_call(Compiler *c, int id, Buf *b) {
            (a literal's bytes live in static storage, #2029) */
         const char *rvt2 = nt_type(nt, recv);
         int lvw = rvt2 && (sp_streq(rvt2, "LocalVariableReadNode") ||
-                           sp_streq(rvt2, "InstanceVariableReadNode"));
+                           sp_streq(rvt2, "InstanceVariableReadNode")) ||
+                  recv == g_sb_shadow_recv;
         int tv2 = ++g_tmp;
         buf_printf(b, "({ sp_int _t%d = ", tv2); emit_int_expr(c, argv[1], b);
         buf_puts(b, "; ");

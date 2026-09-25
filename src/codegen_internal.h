@@ -119,6 +119,15 @@ extern const char *g_sb_iv_name;   /* "@bt" while a shim is open, else NULL */
 extern int         g_sb_iv_cid;
 extern char        g_sb_iv_repl[64];
 int strbuf_slot_ref(Compiler *c, int recv, char *out, size_t cap);
+/* The same shim over a READER CALL that hands out an ivar's handle
+   (`c.name.slice!(0)`): the call is overridden to read the shadow, typed as a
+   plain String for the arm, and g_sb_shadow_recv tells the arms' write-back
+   checks that this receiver is an lvalue for the duration. */
+typedef struct { int recv, slot; unsigned char box, dem; } SbCallShadow;
+extern int g_sb_shadow_recv;
+int  sb_call_shadow_open(Compiler *c, int recv, int tH, char *sref, size_t cap,
+                         SbCallShadow *sv);
+void sb_call_shadow_close(Compiler *c, SbCallShadow *sv);
 int strbuf_boxed_elem_read(Compiler *c, int v);
 int emit_strbuf_read_ref(Compiler *c, int recv, Buf *b);
 extern int g_block_nren;

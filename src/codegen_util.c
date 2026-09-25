@@ -1369,6 +1369,26 @@ int strbuf_slot_ref(Compiler *c, int recv, char *out, size_t cap) {
     snprintf(out, cap, "%s%siv_%s", g_self, g_self_deref, iv_c(nm + 1));
   return 1;
 }
+int g_sb_shadow_recv = -1;
+int sb_call_shadow_open(Compiler *c, int recv, int tH, char *sref, size_t cap,
+                        SbCallShadow *sv) {
+  if (recv < 0 || nt_kind(c->nt, recv) != NK_CallNode || g_sb_shadow_recv >= 0 ||
+      g_sb_iv_name || g_n_argov >= MAX_ARG_OVERRIDE) return 0;
+  if (!strbuf_slot_ref(c, recv, sref, cap)) return 0;
+  sv->recv = recv;
+  sv->box = c->strbuf_box[recv]; sv->dem = c->strbuf_handle_demand[recv];
+  c->strbuf_box[recv] = 0; c->strbuf_handle_demand[recv] = 0;
+  sv->slot = g_n_argov++;
+  g_argov_node[sv->slot] = recv;
+  snprintf(g_argov_text[sv->slot], sizeof g_argov_text[0], "lv__sb%d", tH);
+  g_sb_shadow_recv = recv;
+  return 1;
+}
+void sb_call_shadow_close(Compiler *c, SbCallShadow *sv) {
+  c->strbuf_box[sv->recv] = sv->box; c->strbuf_handle_demand[sv->recv] = sv->dem;
+  g_n_argov = sv->slot;
+  g_sb_shadow_recv = -1;
+}
 const char *rename_local(const char *nm) {
   /* Innermost first. A nested inline pushes its own locals above the caller's,
      and a same-named local belongs to the inner one -- scanning forward gave

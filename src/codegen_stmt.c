@@ -11425,6 +11425,38 @@ int emit_array_mutate_stmt(Compiler *c, int id, Buf *b, int indent) {
      SHADOW copy (a rename entry plus a temporary slot-type flip point every
      read and the final reassignment at it), then swaps the handle's buffer
      contents in place so every alias observes the mutation. */
+  /* A reader call handing out an ivar's handle (`c.name[0] = "X"`): the same
+     re-run, with the call itself overridden to read and write the shadow. */
+  if (rt == TY_STRBUF &&
+      (sp_streq(name, "[]=") || sp_streq(name, "insert") ||
+       sp_streq(name, "clear") || sp_streq(name, "slice!") ||
+       sp_streq(name, "setbyte"))) {
+    char srefC[1024]; SbCallShadow svC;
+    int tH = ++g_tmp;
+    if (sb_call_shadow_open(c, recv, tH, srefC, sizeof srefC, &svC)) {
+      Buf armb; memset(&armb, 0, sizeof armb);
+      int handled = emit_array_mutate_stmt(c, id, &armb, indent + 1);
+      sb_call_shadow_close(c, &svC);
+      if (!handled) free(armb.p);
+      else {
+        emit_indent(b, indent);
+        buf_printf(b, "{ sp_String *_t%d = %s;\n", tH, srefC);
+        emit_indent(b, indent + 1);
+        buf_printf(b, "if (sp_String_is_frozen(_t%d)) sp_raise_frozen_str(_t%d->data);\n", tH, tH);
+        emit_indent(b, indent + 1);
+        buf_printf(b, "const char *lv__sb%d = sp_str_concat(sp_String_cstr(_t%d), (&(\"\\xff\")[1]));\n", tH, tH);
+        emit_indent(b, indent + 1);
+        buf_printf(b, "SP_GC_ROOT(lv__sb%d);\n", tH);
+        buf_puts(b, armb.p ? armb.p : "");
+        free(armb.p);
+        emit_indent(b, indent + 1);
+        buf_printf(b, "sp_String_set_bin(_t%d, lv__sb%d);\n", tH, tH);
+        emit_indent(b, indent);
+        buf_puts(b, "}\n");
+        return 1;
+      }
+    }
+  }
   if (rt == TY_STRING &&
       (sp_streq(name, "[]=") || sp_streq(name, "insert") ||
        sp_streq(name, "clear") || sp_streq(name, "slice!") ||
@@ -11698,8 +11730,9 @@ int emit_array_mutate_stmt(Compiler *c, int id, Buf *b, int indent) {
      splices the span out. */
   if ((rt == TY_STRING || rt == TY_STRBUF) && argc >= 1) {
     const char *rty2 = nt_type(nt, recv);
-    int assignable2 = rty2 && (sp_streq(rty2, "LocalVariableReadNode") ||
-                               sp_streq(rty2, "InstanceVariableReadNode") || sp_streq(rty2, "SelfNode"));
+    int assignable2 = (rty2 && (sp_streq(rty2, "LocalVariableReadNode") ||
+                               sp_streq(rty2, "InstanceVariableReadNode") || sp_streq(rty2, "SelfNode"))) ||
+                      recv == g_sb_shadow_recv;
     const char *abase = NULL, *abang = NULL;
     if      (sp_streq(name, "gsub!"))   { abase = "gsub";   abang = "gsub!"; }
     else if (sp_streq(name, "sub!"))    { abase = "sub";    abang = "sub!"; }
@@ -11800,7 +11833,8 @@ int emit_array_mutate_stmt(Compiler *c, int id, Buf *b, int indent) {
   /* replace / prepend / clear / delete_prefix!/suffix! via reassignment */
   if (rt == TY_STRING) {
     const char *rty = nt_type(nt, recv);
-    int assignable = rty && (sp_streq(rty, "LocalVariableReadNode") || sp_streq(rty, "InstanceVariableReadNode") || sp_streq(rty, "SelfNode"));
+    int assignable = (rty && (sp_streq(rty, "LocalVariableReadNode") || sp_streq(rty, "InstanceVariableReadNode") || sp_streq(rty, "SelfNode"))) ||
+                     recv == g_sb_shadow_recv;
     /* an in-place mutator on a frozen string literal raises FrozenError */
     if (rty && sp_streq(rty, "StringNode") &&
         (sp_streq(name, "insert") || sp_streq(name, "prepend") || sp_streq(name, "<<") ||
