@@ -1,4 +1,4 @@
-status: claimed
+status: done
 branch: fix-super-anon-block
 
 # super-block-drops (handles: misty-heron, coral-bunting)
