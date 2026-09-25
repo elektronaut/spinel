@@ -1,4 +1,4 @@
-status: claimed
+status: done
 branch: fix-build-breaks
 
 # build-breaks (handles: bleak-thrasher, olive-nightjar)
