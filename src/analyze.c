@@ -14124,15 +14124,18 @@ static int bam_wrapper_binds_receiver(Compiler *c, Scope *sc) {
    definition and the next -- statements of the program body and the blocks
    in them, not method bodies (which run whenever they are called, by then
    usually after the last def) and not class or module bodies -- are renamed
-   to match. The last definition keeps the name, and every other call
-   reaches it. Before this every call bound to the FIRST definition: a later
-   def of another arity refused its calls, one of the same arity was a C
-   redefinition. */
-static void redef_rename_calls(NodeTable *nt, int id, const char *from, const char *to, int depth) {
-  if (id < 0 || id >= nt->count || depth > 400) return;
+   to match. So are the earlier body's own calls (recursion), which run
+   while it is still the definition in effect, unless an alias captured the
+   body and may run it later. The last definition keeps the name, and every
+   other call reaches it. Before this every call bound to the FIRST
+   definition: a later def of another arity refused its calls, one of the
+   same arity was a C redefinition. */
+static int redef_rename_calls(NodeTable *nt, int id, const char *from, const char *to, int depth) {
+  if (id < 0 || id >= nt->count || depth > 400) return 0;
   NodeKind k = nt_kind(nt, id);
   if (k == NK_DefNode || k == NK_ClassNode || k == NK_ModuleNode || k == NK_SingletonClassNode)
-    return;
+    return 0;
+  int aliased = 0;
   if (k == NK_CallNode && nt_ref(nt, id, "receiver") < 0) {
     const char *nm = nt_str(nt, id, "name");
     if (nm && sp_streq(nm, from)) nt_set_str(nt, id, "name", to);
@@ -14141,13 +14144,14 @@ static void redef_rename_calls(NodeTable *nt, int id, const char *from, const ch
   if (k == NK_AliasMethodNode) {
     int on = nt_ref(nt, id, "old_name");
     const char *od = on >= 0 ? nt_str(nt, on, "value") : NULL;
-    if (od && sp_streq(od, from)) nt_set_str(nt, on, "value", to);
+    if (od && sp_streq(od, from)) { nt_set_str(nt, on, "value", to); aliased = 1; }
   }
   const SpNode *nd = &nt->nodes[id];
-  for (int i = 0; i < nd->nr; i++) redef_rename_calls(nt, nd->r[i].ref, from, to, depth + 1);
+  for (int i = 0; i < nd->nr; i++) aliased |= redef_rename_calls(nt, nd->r[i].ref, from, to, depth + 1);
   for (int i = 0; i < nd->na; i++)
     for (int j = 0; j < nd->a[i].n; j++)
-      redef_rename_calls(nt, nd->a[i].ids[j], from, to, depth + 1);
+      aliased |= redef_rename_calls(nt, nd->a[i].ids[j], from, to, depth + 1);
+  return aliased;
 }
 /* is `name` the name of any `def` in the program? The private names must
    not collide with a method the program defines itself */
@@ -14181,7 +14185,16 @@ static void rename_redefined_toplevel_defs(Compiler *c) {
     do snprintf(to, sizeof to, "%s__redef%d", nm, ++serial);
     while (redef_name_taken(nt, to));
     nt_set_str(nt, st[i], "name", to);
-    for (int j = i + 1; j < next; j++) redef_rename_calls(nt, st[j], nm, to, 0);
+    int aliased = 0;
+    for (int j = i + 1; j < next; j++) aliased |= redef_rename_calls(nt, st[j], nm, to, 0);
+    /* the earlier body's own calls (recursion, a default) run while it is
+       still the definition in effect when it is entered from the calls
+       above. Not when an alias captured it: `alias old f; def f = old + 1`
+       runs it after the redefinition, where its calls reach the new one */
+    if (!aliased) {
+      redef_rename_calls(nt, nt_ref(nt, st[i], "parameters"), nm, to, 0);
+      redef_rename_calls(nt, nt_ref(nt, st[i], "body"), nm, to, 0);
+    }
     free(nm);
   }
   free(st);
