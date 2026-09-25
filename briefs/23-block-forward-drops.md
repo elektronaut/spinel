@@ -1,4 +1,4 @@
-status: claimed
+status: done
 branch: fix-block-forward-drops
 
 # block-forward-drops (handles: ruddy-tern, slate-curlew)
