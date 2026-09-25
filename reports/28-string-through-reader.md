@@ -65,7 +65,7 @@ Both files fail on unpatched upstream.
 
 ```
  src/analyze.c                                | 28 +++++++---
- src/analyze_infer.c                          | 11 ++++
+ src/analyze_infer.c                          | 10 ++++
  src/codegen_call_recv.c                      | 62 ++++++++++++++-------
  src/codegen_internal.h                       |  9 ++++
  src/codegen_stmt.c                           | 40 ++++++++++++--
