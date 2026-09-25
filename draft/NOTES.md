@@ -1,27 +1,33 @@
 # Draft notes
 
-One issue and one PR per fix branch: `issue-<branch>.md` and `pr-<branch>.md`. The first line is `title: ...`. Every issue's Spinel output was checked on upstream `86aa1cbf`, and every reproducer still fails there.
+Each fix branch has `issue-<branch>.md` and `pr-<branch>.md`. The first line of each file is `title: ...`, followed by a blank line, then the body. Every branch is one commit on upstream master `bcfc3470`, authored by Inge Jørgensen, and is pushed to elektronaut/spinel. Every issue's reproducer still fails on current master.
 
-Placeholders: each PR opens with `Fixes #N.`, and a `#N` inside a body always has the other branch's name next to it in backticks. Numbers of filed PRs are already filled in: #4970, #4972, #4974, #4976.
+**Placeholders.** Each PR opens with `Fixes #N.`: put the new issue's number there. Any other `#N` in a body has another branch's name next to it in backticks; replace it with that branch's PR number once it's filed, or drop the sentence if that branch isn't filed yet. Real numbers (#4969–#4988) are already filled in.
 
-## Decide before filing
+**Gate wording.** Every PR says the gate was clean apart from two known sandbox failures, `pkg.tmpdir.tmpdir_expand_usable` and `socket_ipv6_and_class_methods`. The gate ran on each branch's old base. After the rebase, only each branch's new tests were run, and all pass. Five PRs say this explicitly because their rebase needed a conflict resolved.
 
-- **pf-super and pf-name are the same bug.** `fix-block-forward-errors-pf-super` and `fix-super-anon-block-pf-name` both fix `super` inside an `m#pf` clone. Each one passes the other's tests. File only one. pf-name looks more complete, because it also routes `emit_super_inline` through the fix. Each PR has a paragraph about the overlap; delete it once you've picked.
-- **named-anon may be redundant.** With `fix-anon-block-capture-cells` built on its own, the reproducer and test for `fix-block-forward-drops-named-anon` already pass. Merge #4974, `fix-forwarded-block-ivar-write-new` and `fix-anon-block-capture-cells` first, then check again.
-- **Brief 09 string vs brief 28.** `fix-hash-through-getters-string` and `fix-string-mutation-through-reader` both fix `[]=` and `insert` through a reader, in the same files. The brief-28 issue no longer shows the `[]=` shape; it points to the brief-09 issue with `#N`. Whichever of the two lands second has to be rebased.
-- **zero-arg-pf overlaps poly-zero-arg-arity.** `fix-build-breaks-zero-arg-pf` also adds the zero-argument ArgumentError arm, on the same `cls0_cand` line. Merge `fix-poly-zero-arg-arity` first, then rebase zero-arg-pf down to its `analyze.c` change. Its PR has a paragraph about this overlap.
+## Batch 2: 23 branches, no conflicts with each other or with master
 
-## Text that changes after a rebase
+fix-array-new-block-string-local, fix-block-forward-drops-new, fix-block-forward-errors-ivar-cell, fix-block-forward-errors-pf-super, fix-build-breaks-write-arg, fix-class-value-new-arms-struct, fix-dispatch-arm-gaps-inline-arm, fix-dispatch-arm-gaps-yield-ctor, fix-forwarded-block-ivar-write-new, fix-hash-through-getters-alias, fix-hash-through-getters-misfit, fix-hash-through-getters-string, fix-hash-through-getters-struct, fix-hash-through-getters-super, fix-inline-yield-arity, fix-poly-array-op-assign, fix-poly-array-op-assign-recv-order, fix-poly-zero-arg-arity, fix-rest-default-binding, fix-rest-default-binding-pd, fix-rest-default-binding-splat-nil, fix-seeded-array-ivar-store, fix-silent-wrong-values-puts-to-s
 
-- `fix-rest-default-binding`: the `**kwrest` half duplicates 00bac566 on master, so the commit subject, the PR title and one PR sentence may lose it. The `poly_arm_count` special case in `codegen_call.c` is then out of date.
-- `fix-rest-default-binding-pd`: the poly arm's `**kw` binding `{}` is already on master (#4958), so drop that line from the PR.
-- `fix-rest-default-binding-splat-tail`: the `opt_before_required(c, m)` signature change has to reach the three one-argument callers now on master, and the `emit_call_arity_check` call from #4970. So the diff will be bigger than the PR says.
+## Held until batch 2 merges (each needs a rebase first)
 
-## Merge order
+| Branch | Waits for | Why |
+|---|---|---|
+| fix-anon-block-capture-cells | fix-forwarded-block-ivar-write-new | Without that fix, `super(&)` stops compiling. |
+| fix-block-forward-drops-named-anon | fix-anon-block-capture-cells | Its tests already pass with 22 alone, so it may not be needed. |
+| fix-class-value-new-arms-super | fix-block-forward-drops-new, fix-block-forward-errors-pf-super | Conflicts in `codegen_internal.h`, `analyze_infer.c` and `compiler.h`. |
+| fix-class-value-new-arms-selfnew | fix-class-value-new-arms-struct | They conflict on one line of the class filter. Keep the selfnew shape and use `if (!c->classes[ci].instantiated) continue;`. |
+| fix-build-breaks-zero-arg-pf | fix-poly-zero-arg-arity | Rebase it down to just its `analyze.c` change. |
+| fix-string-mutation-through-reader | fix-hash-through-getters-string | Both fix `[]=`/`insert` through a reader in the same code. |
+| fix-rest-default-binding-splat-tail | fix-rest-default-binding, -pd | Conflicts in `arg_slot_for_param` and the poly arm; keep both sides. |
+| fix-seeded-array-ivar-replace | fix-seeded-array-ivar-store | They conflict only on the Makefile `rbs-seed-test` line; keep both. |
 
-- #4970 → #4972 → `fix-inline-yield-arity`
-- #4976 → `fix-forwarded-block-ivar-write-new` (take #4974's `emit_class_new_call` hunk) → `fix-anon-block-capture-cells`
-- `fix-block-forward-drops-new` after #4974. It also conflicts with `fix-class-value-new-arms-super` in `codegen_internal.h`.
-- `fix-class-value-new-arms-struct` and `-selfnew` conflict on one line in the boxed-receiver class filter. The one that goes second keeps the selfnew shape and uses `if (!c->classes[ci].instantiated) continue;`.
-- `fix-seeded-array-ivar-replace` and `-store` conflict only on the Makefile `rbs-seed-test` line; keep both.
-- The two `fix-rest-default-binding` / `-splat-tail` branches: expect an adjacent-hunk conflict at the top of `arg_slot_for_param`; keep both.
+## On hold: brief 26 (`hold/`)
+
+fix-super-anon-block-bare, -splice and -pf-name each pass their tests on master alone, and they haven't been rebased since. They break when combined with other fixes:
+- With fix-anon-block-capture-cells, `super_anon_block_bare_variants` doesn't compile (`lv___anon_block`).
+- fix-forwarded-block-ivar-write-new conflicts with -bare in `emit_super_block_arg`.
+- In the 26-branch stack, `splice_variants` and `super_in_proc_form` fail. The cause isn't found yet; it isn't 22 or pf-super on their own.
+
+pf-name fixes the same bug as pf-super, which is in batch 2.
