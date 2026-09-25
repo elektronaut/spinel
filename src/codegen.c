@@ -7972,6 +7972,12 @@ static void emit_super_block_arg(Compiler *c, int id, Scope *s, Scope *pm, int l
   }
   if (s->blk_param && s->blk_param[0] && !s->yields)
     buf_printf(b, "lv_%s", rename_local(s->blk_param));
+  /* An inline-only method (`def on(tag, &) = super`, or one that yields) has
+     no proc of its own: its block is the one being spliced here, or the proc
+     driving the splice. `super` hands it on either way; NULL left the
+     parent's `&handler` nil (a later `.call` raised NoMethodError). */
+  else if (s->yields && g_block_id >= 0) emit_proc_literal(c, g_block_id, b);
+  else if (s->yields && g_yield_proc_ref) buf_puts(b, g_yield_proc_ref);
   else buf_puts(b, "NULL");
 }
 
