@@ -7986,8 +7986,8 @@ int emit_super_inline(Compiler *c, int id, Buf *b, int indent, int as_expr) {
   /* `super` inside a class method resolves through the parent's CLASS-method
      chain; the instance chain would miss `def self.x` entirely. */
   int mi = p < 0 ? -1
-         : s->is_cmethod ? comp_cmethod_in_chain(c, p, s->name, &defcls)
-                         : comp_method_in_chain(c, p, s->name, &defcls);
+         : s->is_cmethod ? comp_cmethod_in_chain(c, p, comp_prep_user_name(s->name), &defcls)
+                         : comp_method_in_chain(c, p, comp_prep_user_name(s->name), &defcls);
   if (mi < 0) return 0;
   Scope *m = &c->scopes[mi];
   if (!m->yields || scope_has_return(c, mi)) return 0;

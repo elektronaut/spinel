@@ -1730,7 +1730,22 @@ const char *comp_prep_chain_target(Compiler *c, int class_id, const char *name) 
 }
 
 const char *comp_prep_user_name(const char *name) {
-  if (!name || strncmp(name, "__prep_", 7) != 0) return name;
+  if (!name) return name;
+  /* A proc-form clone (`m#pf`, see make_yield_proc_forms) is the method `m`:
+     a `super` in its body names the parent's `m`, not an `m#pf` no parent
+     has. The copy is kept per source string, since this runs per node. */
+  size_t n = strlen(name);
+  if (n > 3 && !strcmp(name + n - 3, "#pf")) {
+    static const char *src[64], *dup[64];
+    static int nd = 0;
+    for (int i = 0; i < nd; i++) if (src[i] == name) return dup[i];
+    char *d = (char *)malloc(n - 2);
+    if (!d) return name;
+    memcpy(d, name, n - 3); d[n - 3] = 0;
+    if (nd < 64) { src[nd] = name; dup[nd] = d; nd++; }
+    name = d;
+  }
+  if (strncmp(name, "__prep_", 7) != 0) return name;
   const char *p = name + 7;
   while (*p >= '0' && *p <= '9') p++;
   return (*p == '_') ? p + 1 : name;
