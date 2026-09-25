@@ -28,6 +28,31 @@ int resolve_forwarded_block(Compiler *c, int block) {
   return forwards_param ? g_block_id : block;
 }
 
+/* Does this `&` / `&blk` forward the block of the method being inlined, when
+   that block is no literal but a proc -- the inline was itself reached with
+   `&blk` from a real function, so its yields drive g_yield_proc_ref? The
+   forward is then that proc: resolve_forwarded_block, which answers the
+   literal block, found none, and a named `&blk` passed through an anonymous
+   `&` forwarder reached its keeper as nil. */
+int forwards_inline_proc(Compiler *c, int block) {
+  const NodeTable *nt = c->nt;
+  if (block < 0 || g_block_id >= 0 || !g_yield_proc_ref) return 0;
+  if (nt_kind(nt, block) != NK_BlockArgumentNode) return 0;
+  int fe = nt_ref(nt, block, "expression");
+  if (fe < 0) return 1;
+  if (nt_kind(nt, fe) != NK_LocalVariableReadNode || !g_block_param_name) return 0;
+  const char *en = nt_str(nt, fe, "name");
+  return en && sp_streq(en, g_block_param_name);
+}
+
+/* resolve_forwarded_block for a site that passes the block on as a proc
+   value: a forward of the inline's proc stays the forward node, which
+   emit_forwarded_proc_arg writes as that proc. */
+int resolve_forwarded_block_or_proc(Compiler *c, int block) {
+  if (forwards_inline_proc(c, block)) return block;
+  return resolve_forwarded_block(c, block);
+}
+
 /* A BlockArgumentNode that survives resolve_forwarded_block has no inline
    block to splice: it forwards a REAL proc -- a TY_PROC expression (`&block`
    from a real-function body, e.g. a self-recursive block method), or the
@@ -40,6 +65,7 @@ int emit_forwarded_proc_arg(Compiler *c, int blk_node, Buf *b) {
   if (blk_node < 0) return 0;
   const char *ty = nt_type(nt, blk_node);
   if (!ty || !sp_streq(ty, "BlockArgumentNode")) return 0;
+  if (forwards_inline_proc(c, blk_node)) { buf_puts(b, g_yield_proc_ref); return 1; }
   int fe = nt_ref(nt, blk_node, "expression");
   if (fe >= 0 && comp_ntype(c, fe) == TY_PROC) { emit_expr(c, fe, b); return 1; }
   if (fe < 0) {
@@ -79,7 +105,7 @@ void emit_method_call(Compiler *c, int id, Buf *b) {
        resolve it to the caller's inlined block. Without this, forwarding `&blk`
        into a callee that keeps a real proc param (e.g. one that nil-checks the
        block) is rejected as "proc literal without a block". */
-    int blk_node = resolve_forwarded_block(c, nt_ref(nt, id, "block"));
+    int blk_node = resolve_forwarded_block_or_proc(c, nt_ref(nt, id, "block"));
     int wrote_args = m->nparams > 0;
     if (wrote_args) buf_puts(b, ", ");
     if (blk_node >= 0) {
@@ -7543,7 +7569,7 @@ static void emit_dispatch_per_arm(Compiler *c, int cid, const char *name, const 
     if (kmi >= 0 && arm_takes_blk(&c->scopes[kmi])) want_blk = 1;
   }
   int blk_tmp = -1;
-  if (want_blk) blk_node = resolve_forwarded_block(c, blk_node);
+  if (want_blk) blk_node = resolve_forwarded_block_or_proc(c, blk_node);
   if (want_blk && blk_node >= 0) {
     blk_tmp = ++g_tmp;
     Buf pb; memset(&pb, 0, sizeof pb);
@@ -8029,7 +8055,7 @@ else {
      When the call site has no block, blk_tmp stays -1 and we pass NULL. */
   int blk_tmp = -1;
   int needs_blk_arg = m && m->blk_param && m->blk_param[0] && !m->yields;
-  if (needs_blk_arg) blk_node = resolve_forwarded_block(c, blk_node);
+  if (needs_blk_arg) blk_node = resolve_forwarded_block_or_proc(c, blk_node);
   if (needs_blk_arg && blk_node >= 0) {
     blk_tmp = ++g_tmp;
     Buf pb; memset(&pb, 0, sizeof pb);

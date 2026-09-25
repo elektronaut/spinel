@@ -6421,7 +6421,7 @@ static int emit_poly_method_dispatch(Compiler *c, int id, Buf *b) {
          would allocate a proc per candidate class (#3399). Mirrors the
          class-method cascade, which already does this. */
       int blk_tmp0 = -1;
-      { int cblk0 = resolve_forwarded_block(c, nt_ref(nt, id, "block"));
+      { int cblk0 = resolve_forwarded_block_or_proc(c, nt_ref(nt, id, "block"));
         if (cblk0 >= 0) {
           int npc0 = 0;
           const PolyCand *pc0 = comp_poly_candidates(c, name, &npc0);   /* (#4966) */
@@ -6468,7 +6468,7 @@ static int emit_poly_method_dispatch(Compiler *c, int id, Buf *b) {
            materialized -- it ignores the block. The builtin arm still needs
            one, so build it here; only one arm runs either way. */
         if (pen_op && blk_tmp0 < 0) {
-          int cblk1 = resolve_forwarded_block(c, nt_ref(nt, id, "block"));
+          int cblk1 = resolve_forwarded_block_or_proc(c, nt_ref(nt, id, "block"));
           if (cblk1 < 0) pen_op = NULL;
           else {
             blk_tmp0 = ++g_tmp;
@@ -6499,7 +6499,7 @@ static int emit_poly_method_dispatch(Compiler *c, int id, Buf *b) {
          shared by every arm, so the runtime arm locks around the proc. */
       if (sp_streq(name, "synchronize") && argc == 0 && nt_ref(nt, id, "block") >= 0) {
         if (blk_tmp0 < 0) {
-          int cblk2 = resolve_forwarded_block(c, nt_ref(nt, id, "block"));
+          int cblk2 = resolve_forwarded_block_or_proc(c, nt_ref(nt, id, "block"));
           if (cblk2 >= 0) {
             blk_tmp0 = ++g_tmp;
             Buf pb2; memset(&pb2, 0, sizeof pb2);
@@ -7626,7 +7626,7 @@ static int emit_poly_method_dispatch(Compiler *c, int id, Buf *b) {
          cannot alias it (issue #1576). */
       /* Same shared-proc materialization the zero-arg dispatch does (#3399). */
       int blk_tmp2 = -1;
-      { int cblk2 = resolve_forwarded_block(c, nt_ref(nt, id, "block"));
+      { int cblk2 = resolve_forwarded_block_or_proc(c, nt_ref(nt, id, "block"));
         if (cblk2 >= 0) {
           for (int k = 0; k < c->nclasses && blk_tmp2 < 0; k++) {
             if (!c->classes[k].instantiated) continue;
@@ -7638,7 +7638,7 @@ static int emit_poly_method_dispatch(Compiler *c, int id, Buf *b) {
                 scope_needs_proc_form(c, mi2)) {
               blk_tmp2 = ++g_tmp;
               Buf pb2; memset(&pb2, 0, sizeof pb2);
-              emit_proc_literal(c, cblk2, &pb2);
+              if (!emit_forwarded_proc_arg(c, cblk2, &pb2)) emit_proc_literal(c, cblk2, &pb2);
               emit_indent(g_pre, g_indent);
               buf_printf(g_pre, "sp_Proc *_t%d = %s;\n", blk_tmp2, pb2.p ? pb2.p : "NULL");
               emit_indent(g_pre, g_indent);
@@ -12696,9 +12696,11 @@ static int class_responds_to(Compiler *c, int ci, const char *qm) {
    otherwise the call's literal block (if any) is lowered here. */
 static void emit_cmethod_block_arg(Compiler *c, int id, Scope *cm, int blk_tmp, Buf *b) {
   if (!cm->blk_param || !cm->blk_param[0] || cm->yields) return;
-  int blk_node = resolve_forwarded_block(c, nt_ref(c->nt, id, "block"));
+  int blk_node = resolve_forwarded_block_or_proc(c, nt_ref(c->nt, id, "block"));
   if (cm->nparams > 0 || cmethod_takes_self_cls(c, (int)(cm - c->scopes))) buf_puts(b, ", ");
   if (blk_node < 0) { buf_puts(b, "NULL"); return; }
+  /* a forward of the proc the enclosing inline runs under */
+  if (forwards_inline_proc(c, blk_node)) { buf_puts(b, g_yield_proc_ref); return; }
   /* `inner(child, &block)` from a REAL function (not a yield-inline splice):
      the caller's &blk is a live sp_Proc* local -- pass it through instead of
      lowering (a BlockArgumentNode is not a proc literal). An anonymous `&`
@@ -30436,7 +30438,7 @@ else {
            shared by every candidate branch (lowering it per-branch would
            emit the proc function once per candidate). */
         int blk_tmp = -1;
-        int casc_blk = resolve_forwarded_block(c, nt_ref(nt, id, "block"));
+        int casc_blk = resolve_forwarded_block_or_proc(c, nt_ref(nt, id, "block"));
         if (casc_blk >= 0) {
           for (int k = 0; k < ncand && blk_tmp < 0; k++) {
             int mi = comp_cmethod_in_chain(c, cand[k], name, NULL);
@@ -30445,7 +30447,7 @@ else {
             if (cm->blk_param && cm->blk_param[0] && !cm->yields) {
               blk_tmp = ++g_tmp;
               Buf pb; memset(&pb, 0, sizeof pb);
-              emit_proc_literal(c, casc_blk, &pb);
+              if (!emit_forwarded_proc_arg(c, casc_blk, &pb)) emit_proc_literal(c, casc_blk, &pb);
               emit_indent(g_pre, g_indent);
               buf_printf(g_pre, "sp_Proc *_t%d = %s;\n", blk_tmp, pb.p ? pb.p : "NULL");
               emit_indent(g_pre, g_indent);

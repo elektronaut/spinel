@@ -829,6 +829,8 @@ int bare_call_class_owned(Compiler *c, int id);
    given, so the forward becomes a nil block). Any other block node is returned
    unchanged. Lets a forwarded block be materialized by emit_proc_literal. */
 int resolve_forwarded_block(Compiler *c, int block);
+int resolve_forwarded_block_or_proc(Compiler *c, int block); /* ... or the inline's proc */
+int forwards_inline_proc(Compiler *c, int block);
 int emit_hash_collect_expr(Compiler *c, int id, Buf *b);
 int patch_lv_reads(Compiler *c, int id, const char *nm, TyKind ty, int *ids_out, TyKind *ty_out, int cap);
 int patch_lv_read_ntype(Compiler *c, int scope_idx, const char *name, TyKind new_ty, int min_id, int **saved_ids, TyKind **saved_tys);
