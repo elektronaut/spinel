@@ -1,4 +1,4 @@
-status: claimed
+status: done
 branch: fix-surplus-arg-refusal
 deadline: 11:20 Oslo (matz merges at 11:28; after 11:20, skip)
 pr: 4970
