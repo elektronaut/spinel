@@ -6524,7 +6524,12 @@ static int emit_poly_method_dispatch(Compiler *c, int id, Buf *b) {
       emit_poly_callable_prearm(c, name, 0, NULL, NULL, tv, tr, ret, b);
       int cls0_d = -1, cls0_rd = -1;
       int cls0_mi = c->nclasses > 0 ? comp_method_in_chain(c, 0, name, &cls0_d) : -1;
-      int cls0_cand = ((cls0_mi >= 0 && c->scopes[cls0_mi].nrequired == 0) ||
+      /* class 0 is a candidate for the ArgumentError arm below too: its arm
+         must not catch a scalar whose cls_id is 0 as well */
+      char cls0_exp[48];
+      int cls0_cand = ((cls0_mi >= 0 && (c->scopes[cls0_mi].nrequired == 0 ||
+                                         poly_arm_count(c, &c->scopes[cls0_mi], -1, 0, -1,
+                                                        cls0_exp, sizeof cls0_exp) < 0)) ||
                        (c->nclasses > 0 && comp_reader_in_chain(c, 0, name, &cls0_rd))) &&
                       c->nclasses > 0 &&
                       (c->classes[0].instantiated || class_is_prim_reopen(c, 0));
@@ -6675,6 +6680,18 @@ static int emit_poly_method_dispatch(Compiler *c, int id, Buf *b) {
           buf_puts(b, "; break;");
           free(cb.p);
           continue;
+        }
+        /* A class whose method needs arguments answers the zero-argument call
+           with CRuby's ArgumentError, as the n-argument arms do; with no arm
+           the default raised NoMethodError, naming the wrong failure. */
+        if (mi >= 0 && c->scopes[mi].nrequired > 0 &&
+            (c->classes[k].instantiated || class_is_prim_reopen(c, k))) {
+          char zexp[48];
+          if (poly_arm_count(c, &c->scopes[mi], -1, 0, -1, zexp, sizeof zexp) < 0) {
+            buf_printf(b, " case %d: sp_raise_cls(\"ArgumentError\", \"wrong number of arguments"
+                          " (%s)\"); break;", k, zexp);
+            continue;
+          }
         }
         int rdcls = -1;
         if (comp_reader_in_chain(c, k, name, &rdcls)) {
