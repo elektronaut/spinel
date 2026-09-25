@@ -1,4 +1,4 @@
-status: open
+status: claimed
 branch: fix-string-mutation-through-reader
 
 # string-through-reader (handles: gray-shearwater, tan-longspur). Silent wrong values.
