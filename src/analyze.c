@@ -14137,11 +14137,25 @@ static void redef_rename_calls(NodeTable *nt, int id, const char *from, const ch
     const char *nm = nt_str(nt, id, "name");
     if (nm && sp_streq(nm, from)) nt_set_str(nt, id, "name", to);
   }
+  /* `alias saved f` names the definition in effect where it runs */
+  if (k == NK_AliasMethodNode) {
+    int on = nt_ref(nt, id, "old_name");
+    const char *od = on >= 0 ? nt_str(nt, on, "value") : NULL;
+    if (od && sp_streq(od, from)) nt_set_str(nt, on, "value", to);
+  }
   const SpNode *nd = &nt->nodes[id];
   for (int i = 0; i < nd->nr; i++) redef_rename_calls(nt, nd->r[i].ref, from, to, depth + 1);
   for (int i = 0; i < nd->na; i++)
     for (int j = 0; j < nd->a[i].n; j++)
       redef_rename_calls(nt, nd->a[i].ids[j], from, to, depth + 1);
+}
+/* is `name` the name of any `def` in the program? The private names must
+   not collide with a method the program defines itself */
+static int redef_name_taken(NodeTable *nt, const char *name) {
+  for (int id = 0; id < nt->count; id++)
+    if (nt_kind(nt, id) == NK_DefNode && nt_str(nt, id, "name") &&
+        sp_streq(nt_str(nt, id, "name"), name)) return 1;
+  return 0;
 }
 static void rename_redefined_toplevel_defs(Compiler *c) {
   NodeTable *nt = (NodeTable *)c->nt;
@@ -14164,7 +14178,8 @@ static void rename_redefined_toplevel_defs(Compiler *c) {
     if (next < 0) continue;
     char *nm = strdup(nm0);
     char to[256];
-    snprintf(to, sizeof to, "%s__redef%d", nm, ++serial);
+    do snprintf(to, sizeof to, "%s__redef%d", nm, ++serial);
+    while (redef_name_taken(nt, to));
     nt_set_str(nt, st[i], "name", to);
     for (int j = i + 1; j < next; j++) redef_rename_calls(nt, st[j], nm, to, 0);
     free(nm);
