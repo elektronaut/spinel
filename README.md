@@ -91,7 +91,8 @@ with nothing open.
 
 ## Rules
 
-- Never open a PR or an issue, on any repository. The triage session files the
+- Never open a PR or an issue, on any repository. When you draft issue or PR text
+  (in a report or the outbox), follow FILING.md. The triage session files the
   issue and opens the PR.
 - Never push to `master` or to a branch you didn't create.
 - One brief per session unless told otherwise. When a session takes another
