@@ -1,4 +1,4 @@
-status: claimed
+status: done
 branch: fix-hash-through-getters
 
 # hash-through-getters
