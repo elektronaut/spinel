@@ -1,4 +1,4 @@
-status: claimed
+status: done
 branch: fix-redefined-toplevel-def
 deadline: 11:20 Oslo (matz merges at 11:28; after 11:20, skip)
 pr: 4972
@@ -81,3 +81,5 @@ _🎯 Functional Correctness_ | _🟡 Minor_ | _⚡ Quick win_
 
 
 Priority: the two quick wins first (unused generated name; singleton scopes), then the alias one. The first finding (pre-redefinition call target) is a heavy lift: only if time is left, otherwise mark it skipped.
+
+**Obsolete (10:45):** PR #4972 was merged at 10:01 and matz fixed these findings himself in 405e089c. Stop work on this brief; nothing to push.
