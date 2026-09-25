@@ -1,4 +1,4 @@
-status: open
+status: claimed
 branch: fix-super-anon-block
 
 # super-block-drops (handles: misty-heron, coral-bunting)
