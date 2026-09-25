@@ -5,7 +5,7 @@
 | Bug | Branch | Base | Commit |
 |---|---|---|---|
 | umber-wagtail | `fix-redefined-toplevel-def` | upstream/master `ab41b4ae` | `c0a897316c0584438dea1070e23844ee38f229d1`: "A redefined top-level method is the definition in effect where it is called" |
-| sable-lark | `fix-inline-yield-arity` | **`fix-surplus-arg-refusal` (brief 06, `3c13f2b4`)** | `87f566485e80729c4d8f66cebef10a50357be908`: "An inlined yielding method judges its call's count and binds a **kwrest" |
+| sable-lark | `fix-inline-yield-arity` | **`fix-surplus-arg-refusal` (brief 06, `463019f5`)** | `4d38c8ab324dbadddc5588c9b6bb5340a225b890`: "An inlined yielding method judges its call's count and binds a **kwrest" |
 
 Every reproducer in `briefs/21-redefined-def/` matches its `.expected` output (on
 the combined tree for sable-lark).
@@ -80,8 +80,8 @@ rubyspec-gate[core/range]: all 83 expected-PASS examples still pass
 
 **Branch base: please read.** The brief's fix calls `emit_call_arity_check`. That
 helper exists only on brief 06's `fix-surplus-arg-refusal`, which upstream
-hasn't merged. So this branch sits on top of that one: one commit, `87f56648`, on
-`3c13f2b4`. That goes against the README's "never base a fix on an earlier fix
+hasn't merged. So this branch sits on top of that one: one commit, `4d38c8ab`, on
+`463019f5`. That goes against the README's "never base a fix on an earlier fix
 branch", but the brief itself sets up the dependency. As the brief predicted, the
 branch alone fails `builtins_take_drop_while`, which also needs umber-wagtail. So
 I gated it on a local, unpushed merge of `fix-inline-yield-arity` and

@@ -4,7 +4,7 @@ All three bugs (mossy-lynx, willow-bison, violet-mole) share one root cause
 and are fixed on one branch.
 
 - Branch: `fix-surplus-arg-refusal`
-- Commit: `3c13f2b425a6de4b9238db35d77fdb9823e8d95c`
+- Commit: `463019f5946fd9c0dff495fdf6cda849cf4b0f8a`
   "A surplus positional into a keyword or **kw callee raises ArgumentError"
 - Diff stat (vs upstream/master 032c037a):
 

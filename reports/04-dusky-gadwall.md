@@ -2,7 +2,7 @@
 
 **Status:** done
 **Branch:** `fix-anon-block-forward-capture` (on origin, based on upstream/master `032c037a`)
-**Commit:** `4b6259a6ae4d8b98b38719622d9d61f6198cd310`: "A block forwarded by an anonymous & to a method that keeps it cells its captures"
+**Commit:** `6ebe8070cb49d9f9bc03b866d6a0fb0ed00b7965`: "A block forwarded by an anonymous & to a method that keeps it cells its captures"
 
 Commit author is `Claude <noreply@anthropic.com>`, not Inge. The README's
 `git config user.name/email` step arrived mid-brief, after the commit, and the
