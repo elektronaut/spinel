@@ -1,7 +1,37 @@
 # 00-review-redefined-def-4972: report
 
-**Status:** done. Of the four findings, three are fixed and one is not valid.
-Session: cloud-2.
+**Status:** obsolete. PR #4972 was merged at 10:01, and matz fixed the findings
+in `405e089c`. The note saying so landed at 10:45, while my gates were running, and
+I didn't re-read this branch before pushing. So the two commits below were pushed
+after the merge (10:40 and 11:06). They're on the fork branch only and aren't in
+upstream/master. I haven't force-pushed or reverted them.
+
+What's still useful:
+
+1. **matz's `405e089c` agrees with this work on all four findings.** It renames the
+   earlier body's calls, rewrites the alias target and skips a taken private name.
+   It also rejects the singleton suggestion for the same reason as below.
+2. **One gap remains on upstream/master (`bcfc3470`): an alias chain over a
+   recursive earlier body.** `405e089c` renames the earlier body's calls even when
+   an `alias` captured the body. With the usual alias-chain shape, the old body
+   then recurses into itself instead of the new definition:
+
+   ```ruby
+   def walk(n) = n == 0 ? [:old] : walk(n - 1) + [:old]
+   alias walk_old walk
+   def walk(n) = walk_old(n) + [:new]
+   p walk(2)
+   ```
+
+   CRuby prints `[:old, :new, :old, :new, :old, :new]`. Upstream master prints
+   `[:old, :old, :old, :new]`. The fix branch at `1a3dd59f` prints CRuby's output,
+   because it skips the body rename when an alias captured the body.
+   `test/toplevel_def_redefined_recursion.rb` on the fix branch also fails on
+   master (its `walk_old(2)` line). If you want it filed, the change is the
+   `aliased` part of `1a3dd59f` (about 15 lines in `analyze.c`). It could go on a
+   new branch from upstream/master; I haven't made one.
+
+The rest of this report is as written before I saw the note.
 
 Branch `fix-redefined-toplevel-def`. I fetched it at `cb5ddac4` (the amended tip)
 and added two commits on top, with no force-push:
