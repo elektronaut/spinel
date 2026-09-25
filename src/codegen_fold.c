@@ -6641,8 +6641,11 @@ int emit_unknown_kwarg_raise(Compiler *c, Scope *m, int kwh) {
     const char *kn = (kty && sp_streq(kty, "SymbolNode")) ? nt_str(nt, key, "value") : NULL;
     if (!kn) continue;
     int found = 0;
+    /* Only a keyword parameter claims a key: a positional parameter sharing
+       its name does not (`def f(x, k: 1)` called `f(1, x: 2)`). */
     for (int i = 0; i < m->nparams; i++)
-      if (m->pnames[i] && sp_streq(m->pnames[i], kn)) { found = 1; break; }
+      if (m->pnames[i] && sp_streq(m->pnames[i], kn) &&
+          callee_has_kwarg(c, m, m->pnames[i])) { found = 1; break; }
     if (!found) { args_raise("unknown keyword: :%s", kn); return 1; }
   }
   return 0;
@@ -6707,6 +6710,23 @@ static int bam_variadic_kernel(const NodeTable *nt, const Scope *m) {
 int splat_operand_is_scalar(TyKind t) {
   return t == TY_NIL || t == TY_INT || t == TY_BIGINT || t == TY_FLOAT || t == TY_STRING ||
          t == TY_STRBUF || t == TY_SYMBOL || t == TY_BOOL;
+}
+
+/* CRuby appends the method's required keywords to an arity message even
+   when the call supplied them (`def f(x, k:)` called `f(k: 2)` reports
+   `given 0, expected 1; required keyword: k`). */
+static void arity_required_kw_suffix(Compiler *c, Scope *m, char *exp, size_t cap) {
+  char kwn[160]; kwn[0] = 0; int nk = 0;
+  for (int i = 0; i < m->nparams; i++) {
+    if (!m->pnames[i] || !callee_param_is_declared_kwarg(c, m, m->pnames[i])) continue;
+    if (m->pdefault && m->pdefault[i] >= 0) continue;
+    if (nk) strncat(kwn, ", ", sizeof kwn - strlen(kwn) - 1);
+    strncat(kwn, m->pnames[i], sizeof kwn - strlen(kwn) - 1);
+    nk++;
+  }
+  size_t cur = strlen(exp);
+  if (nk > 0 && cur < cap)
+    snprintf(exp + cur, cap - cur, "; required keyword%s: %s", nk > 1 ? "s" : "", kwn);
 }
 
 /* Arity / keyword validation, in CRuby's words, raised at RUNTIME just
@@ -6777,10 +6797,11 @@ static void emit_call_arity_check(Compiler *c, Scope *m, int argc, const int *ar
      never a positional argument here (kwh_positional_slot). */
   else if (!has_splat && !synth && m->rest_idx < 0 && m->kwrest_idx >= 0 && !m->cs_synth) {
     if (pos_argc > nfixed || pos_argc < nreq) {
-      if (nreq == nfixed)
-        args_raise("wrong number of arguments (given %d, expected %d)", pos_argc, nfixed);
-      else
-        args_raise("wrong number of arguments (given %d, expected %d..%d)", pos_argc, nreq, nfixed);
+      char expk[192];
+      if (nreq == nfixed) snprintf(expk, sizeof expk, "%d", nfixed);
+      else snprintf(expk, sizeof expk, "%d..%d", nreq, nfixed);
+      arity_required_kw_suffix(c, m, expk, sizeof expk);
+      args_raise("wrong number of arguments (given %d, expected %s)", pos_argc, expk);
     }
   }
   else if (!has_splat && !has_ds && !synth &&
@@ -6797,30 +6818,39 @@ static void emit_call_arity_check(Compiler *c, Scope *m, int argc, const int *ar
         if (m->pnames[i] && callee_has_kwarg(c, m, m->pnames[i]) &&
             kwh_lookup(nt, kwh, m->pnames[i]) >= 0) { kw_matches = 1; break; }
     int eff_pos = pos_argc + ((kwh >= 0 && !kw_matches) ? 1 : 0);
-    char expbuf2[32];
+    char expbuf2[192];
     if (nreq == nfixed) snprintf(expbuf2, sizeof expbuf2, "%d", nfixed);
     else snprintf(expbuf2, sizeof expbuf2, "%d..%d", nreq, nfixed);
+    arity_required_kw_suffix(c, m, expbuf2, sizeof expbuf2);
     int raised = 0;
     if (eff_pos > nfixed && !bam_variadic_kernel(nt, m)) {
       args_raise("wrong number of arguments (given %d, expected %s)", eff_pos, expbuf2);
       raised = 1;
     }
-    if (!raised && emit_unknown_kwarg_raise(c, m, kwh)) raised = 1;
+    /* CRuby judges the positional count before any keyword, and a key binds
+       only a keyword parameter: `def f(x, k: 1)` called `f(x: 2)` is short
+       its positional `x`, not funded by the key that shares its name. */
+    int lead_opt = opt_before_required(m);
     for (int i = 0; i < m->nparams && !raised; i++) {
+      if (callee_param_is_declared_kwarg(c, m, m->pnames[i])) continue;
       /* With a leading optional the shortfall is a count, not a position:
          this parameter may be undefaulted and still funded, because the
          required ones are covered first. */
-      int lead_opt = opt_before_required(m);
       if (lead_opt && arg_slot_for_param(c, m, i, eff_pos) >= 0) continue;
       if (i < eff_pos && !lead_opt) continue;
       if (m->pdefault && m->pdefault[i] >= 0) continue;
-      if (kw_matches && kwh_lookup(nt, kwh, m->pnames[i]) >= 0) continue;
-      if ((kwh >= 0 && kw_matches) || callee_param_is_declared_kwarg(c, m, m->pnames[i]))
-        args_raise("missing keyword: :%s", m->pnames[i] ? m->pnames[i] : "?");
-      else
-        args_raise("wrong number of arguments (given %d, expected %s)", eff_pos, expbuf2);
+      args_raise("wrong number of arguments (given %d, expected %s)", eff_pos, expbuf2);
       raised = 1;
     }
+    /* Then a missing keyword, and only then a key nothing declares. */
+    for (int i = 0; i < m->nparams && !raised; i++) {
+      if (!callee_param_is_declared_kwarg(c, m, m->pnames[i])) continue;
+      if (m->pdefault && m->pdefault[i] >= 0) continue;
+      if (kw_matches && kwh_lookup(nt, kwh, m->pnames[i]) >= 0) continue;
+      args_raise("missing keyword: :%s", m->pnames[i]);
+      raised = 1;
+    }
+    if (!raised) emit_unknown_kwarg_raise(c, m, kwh);
   }
 }
 
