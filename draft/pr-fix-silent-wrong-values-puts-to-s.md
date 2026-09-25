@@ -1,0 +1,11 @@
+title: A boxed value-type object renders through its own to_s and inspect
+
+Fixes #N.
+
+When a value is boxed, the runtime turns it into a string through the generated `sp_obj_to_s_sw` and `sp_obj_inspect_sw` dispatchers, which `emit_obj_inspect_dispatch` (`src/codegen.c`) writes as a switch over class ids with one arm per class that defines `to_s` or `inspect`. Both dispatchers, and the forward declarations of the user methods ahead of them, skipped every value-type class (`comp_ty_value_obj`). A value-type object that reaches a boxed slot, as `pick(i).new(5)` does when `pick` returns one of two classes, is still a boxed pointer to its struct, but no arm matched its class id. `puts obj` and `"#{obj}"` therefore fell to the `#<A:0x...>` default, and `p obj` with a user `#inspect` fell to `#<Object>`. The inline poly dispatch that `obj.to_s` compiles to already called `sp_A_to_s(*(sp_A *)p)`, which is why a direct `to_s` call was right.
+
+Value-type classes now get arms in both dispatchers, in the by-value form the inline dispatch uses: `case N: return sp_A_to_s(*(sp_A *)p);`, and the same for `inspect`. The forward declarations take `self` by value for a value-type class, matching the method's real signature. The arms are emitted only for a zero-argument, String-returning `to_s` or `inspect` that the class defines itself (`tdef == i`). A value-type class with no user `inspect` still gets no arm in the inspect dispatcher, so it keeps the existing default rendering, and that dispatcher's rule that a value type has no stable address for the default ivar walk is unchanged. Reference-type classes and modules are handled exactly as before.
+
+Tests: `test/value_obj_boxed_to_s.rb` is the issue's reproducer, and covers `puts` on each class, string interpolation, `to_s` with `+` concatenation, `p` with a user `#inspect`, and a class with no `to_s` that still renders as `#<C...`. It fails on master and matches CRuby 4.0 with this change. `make gate` is clean apart from the two known sandbox failures, `pkg.tmpdir.tmpdir_expand_usable` and `socket_ipv6_and_class_methods`.
+
+Not covered: a value-type class that inherits its `to_s` or `inspect` rather than defining it gets no arm; no program was found that makes such a class a value type.

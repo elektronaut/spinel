@@ -1,0 +1,11 @@
+title: An index write through a local alias of a getter reaches the ivar
+
+Fixes #N.
+
+`infer_write_types` gathers index writes (`h[k] = v`) as evidence for the container they land in. A write whose receiver is a getter call (`c.cache[k] = v`) goes through the getter branch, which uses `getter_ivar_targets` to find the ivar the getter answers and widens that ivar's hash type. A write whose receiver is a local read folds into the local's type alone. So after `x = c.cache`, the write `x["x"] = "y"` typed `x` as a String-keyed hash while `@c` stayed Integer-keyed from `put(1, 2)`, and the assignment `x = c.cache` became a pointer assignment between two different hash structs, which the C compiler refused.
+
+A new helper, `local_hash_alias_source`, recognizes a hash local whose only write in its scope is `x = @c` or `x = recv.getter` (no arguments, no block), where the getter answers an ivar according to `getter_ivar_targets`. The receiver's class is resolved from a constant, from the receiver's inferred object type, or from the enclosing scope for a self call. For such a local, an index write is redirected to that source node, so it is handled exactly as if it had been written as `@c[k] = v` or `c.cache[k] = v`, and the ivar widens. Everything else stays as it was: parameters, block parameters, locals written more than once, locals assigned from anything other than a plain ivar read or a zero-argument getter call, and splice writes still fold into the local only. Only a local that provably holds the ivar's own hash is redirected, so evidence never reaches an ivar the local might not hold.
+
+Tests: `test/hash_write_through_getter_alias.rb` is the issue's reproducer, plus a class that writes a Symbol key through a local holding `@d` directly (`h = @d`) and a String key through a local holding a self getter call (`t = tbl`), then reads both back and adds the values. It fails on master and matches CRuby 4.0 with this change. `make gate` is clean apart from the two known sandbox failures, `pkg.tmpdir.tmpdir_expand_usable` and `socket_ipv6_and_class_methods`.
+
+Not covered: a hash local that is not an alias of an ivar still has its key type replaced, not widened, when the evidence fold meets a write with a different key type; that is how locals already behave and is unchanged here.

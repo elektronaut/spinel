@@ -1,0 +1,13 @@
+title: super inside a proc-form clone names the method, not the clone
+
+Fixes #N.
+
+A method that yields, or takes an anonymous `&`, and is called on a poly receiver is reached through a proc-form clone named `m#pf`, which `make_yield_proc_forms` makes. A `super` in the clone's body resolved the parent method by the scope's name. `emit_super` and the two analysis sites that resolve `super` (`analyze_infer.c`, `analyze_scope.c`) pass that name through `comp_prep_user_name`, which maps a prepend shadow (`__prep_N_m`) back to `m` but left `m#pf` alone. `emit_super_inline`, which splices a yielding parent, used `s->name` with no mapping at all. So every lookup was for `m#pf`. A parent that doesn't yield has no such clone, and the call raised `super: no superclass method 'm#pf'`. When the parent is itself an anonymous-`&` method (`"R" + super` over `Q#m(x, &) = super`), the `super` in `R#m`'s clone resolved wrongly too, and the generated C failed with `void value not ignored as it ought to be`.
+
+`comp_prep_user_name` now also strips a trailing `#pf`, so the clone's `super` resolves under the method's own name, and the prepend mapping still applies to the result. The stripped copies are cached by source pointer, since this runs per node. `emit_super_inline` now calls `comp_prep_user_name` for its chain lookup too. The analysis sites already call it, so they pick up the change. Names without the suffix map exactly as before. A yielding parent is found under its plain name and spliced by `emit_super_inline` as it is for a direct call, so no call goes to a yielding method's missing C function.
+
+This overlaps #N (`fix-block-forward-errors-pf-super`), which fixes the same `m#pf` lookup with a separate `comp_super_name` that keeps `m#pf` when an ancestor has that clone and otherwise falls back to `m`, but leaves `emit_super_inline` unchanged. Each branch passes the other's test, so only one of them needs to merge. They merge without conflicts, and with both merged `comp_super_name` never sees a `#pf` name.
+
+Tests: `test/super_in_proc_form.rb` covers a bare `super` and `super(x + 1)` from an anonymous-`&` override, the three-level chain from the issue, and a yielding override whose `super` goes to a plain parent, called with and without a block. Every call goes through a poly receiver. It fails on master and matches CRuby 4.0 with this change. `make gate` is clean apart from the two known sandbox failures, `pkg.tmpdir.tmpdir_expand_usable` and `socket_ipv6_and_class_methods`.
+
+This came up while testing the fix for #N (`fix-super-anon-block-bare`): a bare `super` from `def on(tag, &)` into a `&handler` parent, called on a poly receiver, needs both changes.

@@ -1,0 +1,11 @@
+title: A value-position write to a mutable-string local wraps its value
+
+Fixes #N.
+
+A local that a nested block appends to (`2.times { line << "a" }`) is a shared mutable-string local, `TY_STRBUF`, stored as an `sp_String *` handle. A write to it has two forms. The statement form, `emit_assign`, handles every way a value becomes that handle: aliasing another handle, a boxed element, or wrapping a fresh string. The expression form, the `LocalVariableWriteNode` arm of `emit_expr_node` in `src/codegen_expr.c`, which emits `({ lv = rhs; lv; })`, had no `TY_STRBUF` case, so it assigned the write's `const char *` value straight into the `sp_String *` slot and the C didn't compile. The ivar write's expression form already had this case (#3993, #4567). The bug only showed up where a write in statement position is emitted as an expression, and `Array.new(n) { }` does that for every non-tail statement of its block. A write used as a value, such as `if (buf = +"abc")`, hits the same arm.
+
+For a `TY_STRBUF` local, the expression form now runs the write through `emit_assign` and then yields the slot's ordinary read face: the string copy, with the handle published to `_sp_ret_strbuf`, exactly as a plain read of the local and the ivar twin produce. Aliasing, boxed element reads and fresh wraps therefore behave as in the statement form. Every other local type takes the existing path unchanged, so the change is limited to a case that failed to compile before.
+
+Tests: `test/array_new_block_strbuf_local.rb` covers the issue's reproducer; `String.new` over several rows with the row index appended; two locals in the block, one aliasing the other (`b = a`), where a mutation shows through both names; and the write used as an `if` condition. All four fail to compile on master and match CRuby 4.0 with this change. `make gate` is clean apart from the two known sandbox failures, `pkg.tmpdir.tmpdir_expand_usable` and `socket_ipv6_and_class_methods`.
+
+Not covered: a write to a mutable-string local passed as an argument to a mutable-string parameter, `show(buf = +"abc")`, also fails to compile on master. It goes through the call-argument code, not this expression form, and is fixed separately in #N (`fix-build-breaks-write-arg`).
