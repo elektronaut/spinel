@@ -1,4 +1,4 @@
-status: claimed
+status: done
 branch: fix-poly-array-set-eql
 
 # poly-set-eql (handle: frosted-shrike). Silent wrong value.
