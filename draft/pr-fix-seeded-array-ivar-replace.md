@@ -10,6 +10,4 @@ Tests: `test/rbs-seed/seeded_array_replace_kind.rb` (seed in `test/rbs-seed/sig/
 
 Not covered: only Int, Float and Str array receivers convert. A seeded object array (`Array[Foo]`) receiving a source of another kind wasn't tried.
 
-The `fix-seeded-array-ivar-store` PR (#N) adds its test to the same `rbs-seed-test` line of the `Makefile`, so whichever merges second has a one-line conflict there; keep both names.
-
 This was found in the badline C64 emulator built with an RBS seed that pins its memory `@storage` to `Array[Integer]`; the reproducer is its memory class reduced.
