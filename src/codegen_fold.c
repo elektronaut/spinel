@@ -5433,6 +5433,17 @@ static int emit_strbuf_local_write_handle(Compiler *c, int node, Buf *out) {
   return 1;
 }
 
+/* A parameter a closure in its method captures is a heap cell, and a default
+   that builds such a closure (`b: -> { a }`) captures the hoisted alias through
+   its cell spelling: give the alias `lv_<uniq>` that cell too. */
+static void emit_pd_cell_alias(Compiler *c, LocalVar *plv, const char *uniq) {
+  if (!plv || !plv->is_cell || plv->byref_out) return;
+  emit_inlined_local_decl(c, plv, uniq, g_pre, g_indent);
+  emit_indent(g_pre, g_indent);
+  if (plv->type == TY_PROC) buf_printf(g_pre, "*_cell_%s = (sp_int)(uintptr_t)lv_%s;\n", uniq, uniq);
+  else buf_printf(g_pre, "*_cell_%s = lv_%s;\n", uniq, uniq);
+}
+
 /* A default a dispatch arm omits runs on the receiver as the arm's class: the
    caller's self may be another class, or none at all at top level (#4873). */
 void emit_arg_or_default(Compiler *c, Scope *m, int idx, int provided, Buf *out) {
@@ -5488,7 +5499,9 @@ static void emit_arg_or_default_at(Compiler *c, Scope *m, int idx, int provided,
   g_open_default[g_open_defaults].m = m;
   g_open_default[g_open_defaults].idx = idx;
   g_open_defaults++;
+  int sv_nren = declare_default_locals(c, m, m->pdefault[idx]);
   emit_arg_or_default_fill(c, m, idx, provided, out);
+  g_nren = sv_nren;
   g_open_defaults--;
 }
 
@@ -5771,8 +5784,10 @@ static void emit_arg_or_default_fill(Compiler *c, Scope *m, int idx, int provide
              parameter appended to the copy and the caller's array never
              changed, silently (#4480). Until the parameter can take the
              typed array by reference, refuse the shape rather than
-             miscompile it. */
+             miscompile it. An array literal is storage nobody else holds,
+             so its copy is the only one there is. */
           if (m && idx >= 0 && idx < m->nparams && m->pnames[idx] &&
+              nt_kind(c->nt, provided) != NK_ArrayNode &&
               scope_mutates_array_local(c, (int)(m - c->scopes), m->pnames[idx], 0)) {
             char msg[512];
             snprintf(msg, sizeof msg,
@@ -6531,6 +6546,14 @@ int emit_ds_hash_materialize(Compiler *c, int kwh, TyKind *out_type) {
         free(hb.p);
         emit_kw_splat_conv_check(c, *out_type, NULL);
       }
+      else if (*out_type == TY_NIL && nt_kind(nt, inner2) != NK_NilNode) {
+        /* `**f` where f answers nil: no keywords to bind, but f still runs */
+        Buf hb; memset(&hb, 0, sizeof hb);
+        emit_expr(c, inner2, &hb);
+        emit_indent(g_pre, g_indent);
+        buf_printf(g_pre, "(void)(%s);\n", hb.p ? hb.p : "0");
+        free(hb.p);
+      }
     }
     else {
       /* Anonymous `**`: materialize the enclosing __anon_kwrest (SymPolyHash)
@@ -6741,6 +6764,14 @@ int emit_kwrest_collect(Compiler *c, Scope *m, int kwh, int ds_hash_tmp,
         /* `**nil` carries no keywords, and a first operand of another
            class already raised where emit_ds_hash_materialize evaluated it */
         const char *bad3 = kw_splat_bad_cls(c, sty);
+        if (sty == TY_NIL && nsplat3 > 1 && nt_kind(nt, inner3) != NK_NilNode) {
+          /* a later operand answering nil still runs */
+          Buf hb; memset(&hb, 0, sizeof hb);
+          emit_expr(c, inner3, &hb);
+          emit_indent(g_pre, g_indent);
+          buf_printf(g_pre, "(void)(%s);\n", hb.p ? hb.p : "0");
+          free(hb.p);
+        }
         if (bad3 && nsplat3 > 1) {
           /* a later operand of another class raises where it stands */
           Buf hb; memset(&hb, 0, sizeof hb);
@@ -7193,6 +7224,12 @@ int emit_splat_gather(Compiler *c, Scope *m, const int *argv, int pos_argc) {
     }
     free(ab.p);
   }
+  emit_gather_arity_check(c, m, ct);
+  return ct;
+}
+
+/* Refuse a gathered positional count the parameters cannot take. */
+void emit_gather_arity_check(Compiler *c, Scope *m, int ct) {
   int pos_required = 0, pos_params = 0;
   positional_arity(c, m, &pos_required, &pos_params);
   if (m->rest_idx >= 0) {
@@ -7200,7 +7237,7 @@ int emit_splat_gather(Compiler *c, Scope *m, const int *argv, int pos_argc) {
     buf_printf(g_pre,
                "if (_t%d->len < %d) sp_raise_cls(\"ArgumentError\", sp_sprintf(\"wrong number of arguments (given %%lld, expected %d+)\", (long long)_t%d->len));\n",
                ct, pos_required, pos_required, ct);
-    return ct;
+    return;
   }
   char expbuf[48];
   if (pos_required == pos_params) snprintf(expbuf, sizeof expbuf, "expected %d", pos_params);
@@ -7209,7 +7246,6 @@ int emit_splat_gather(Compiler *c, Scope *m, const int *argv, int pos_argc) {
   buf_printf(g_pre,
              "if (_t%d->len < %d || _t%d->len > %d) sp_raise_cls(\"ArgumentError\", sp_sprintf(\"wrong number of arguments (given %%lld, %s)\", (long long)_t%d->len));\n",
              ct, pos_required, ct, pos_params, expbuf, ct);
-  return ct;
 }
 
 /* The inlined yield path binds parameters one by one from the argument
@@ -7505,6 +7541,7 @@ void emit_args_filled(Compiler *c, int callee_idx, int argsNode, const char *lea
           emit_indent(g_pre, g_indent);
           buf_printf(g_pre, pt == TY_POLY ? "SP_GC_ROOT_RBVAL(lv_%s);\n" : "SP_GC_ROOT(lv_%s);\n", uniq);
         }
+        emit_pd_cell_alias(c, plv, uniq);
       }
       free(vb.p);
       /* Register the rename AFTER emitting temp i so param i+1's default reads
@@ -8448,6 +8485,8 @@ else {
         emit_indent(g_pre, g_indent);
         emit_ctype(c, att, g_pre);
         buf_printf(g_pre, " lv__pd%d_%d = _t%d; (void)lv__pd%d_%d;\n", pd_uid, k, atmp[k], pd_uid, k);
+        char pdn[48]; snprintf(pdn, sizeof pdn, "_pd%d_%d", pd_uid, k);
+        emit_pd_cell_alias(c, p, pdn);
         snprintf(g_ren_from[g_nren], sizeof g_ren_from[0], "%s", m->pnames[k]);
         snprintf(g_ren_to[g_nren], sizeof g_ren_to[0], "_pd%d_%d", pd_uid, k);
         g_nren++;
