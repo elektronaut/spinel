@@ -2972,6 +2972,12 @@ static TyKind infer_call_inner(Compiler *c, int id) {
       TyKind uret = TY_UNKNOWN; int nc = recv_is_var ? 0 : -1000, set = 0;
       int ncc = 0, nblk = 0;
       int has_blk = nt_ref(nt, id, "block") >= 0;
+      /* a splat's count is known only at run time: the call reaches every
+         candidate the other arguments fit, through the poly receiver's
+         class-tag dispatch, which answers poly */
+      int has_splat = 0;
+      for (int a = 0; argv && a < argc; a++)
+        if (nt_kind(nt, argv[a]) == NK_SplatNode) has_splat = 1;
       const PolyCand *ccs = recv_is_var ? comp_cmethod_candidates(c, name, &ncc) : NULL;
       for (int ki = 0; ki < ncc; ki++) {
         int k = ccs[ki].cls;
@@ -2994,8 +3000,9 @@ static TyKind infer_call_inner(Compiler *c, int id) {
         int rest_ok = rest_packable_arm(c, &c->scopes[kmi]);
         if ((c->scopes[kmi].rest_idx >= 0 && !rest_ok) || c->scopes[kmi].yields ||
             (c->scopes[kmi].blk_param && c->scopes[kmi].blk_param[0])) { nc = 0; nblk = 0; break; }
-        if (argc < c->scopes[kmi].nrequired ||
-            (c->scopes[kmi].rest_idx < 0 && argc > c->scopes[kmi].nparams)) continue;
+        if (has_splat ? (c->scopes[kmi].rest_idx < 0 && argc - 1 > c->scopes[kmi].nparams)
+                      : (argc < c->scopes[kmi].nrequired ||
+                         (c->scopes[kmi].rest_idx < 0 && argc > c->scopes[kmi].nparams))) continue;
         nc++;
         TyKind kr = (TyKind)c->scopes[kmi].ret;
         if (!set) { uret = kr; set = 1; }
@@ -3003,7 +3010,7 @@ static TyKind infer_call_inner(Compiler *c, int id) {
       }
       if (nblk > 0) return TY_POLY;
       if (nc > 0 && !has_blk)
-        return (uret == TY_UNKNOWN || uret == TY_VOID) ? TY_POLY : uret;
+        return (uret == TY_UNKNOWN || uret == TY_VOID || has_splat) ? TY_POLY : uret;
     }
   }
 
