@@ -1220,7 +1220,12 @@ static const char *vis_arg_name(const NodeTable *nt, int arg) {
 /* Record `kind` for the methods an attr_reader/writer/accessor call declares
    (writers as "x="), e.g. for `private attr_reader :x` or a bare attr under a
    private/protected section. */
-static void vis_apply_attr(Compiler *c, ClassInfo *cls, int call, int kind) {
+static void vis_record(ClassInfo *cls, const char *name, int kind, int sg) {
+  if (sg) comp_cmethod_vis_set(cls, name, kind);
+  else comp_method_vis_set(cls, name, kind);
+}
+
+static void vis_apply_attr(Compiler *c, ClassInfo *cls, int call, int kind, int sg) {
   const NodeTable *nt = c->nt;
   const char *nm = nt_str(nt, call, "name");
   if (!nm) return;
@@ -1234,11 +1239,11 @@ static void vis_apply_attr(Compiler *c, ClassInfo *cls, int call, int kind) {
   for (int i = 0; i < an; i++) {
     const char *base = vis_arg_name(nt, argv[i]);
     if (!base) continue;
-    if (reader) comp_method_vis_set(cls, base, kind);
+    if (reader) vis_record(cls, base, kind, sg);
     if (writer) {
       char buf[256];
       snprintf(buf, sizeof buf, "%s=", base);
-      comp_method_vis_set(cls, buf, kind);
+      vis_record(cls, buf, kind, sg);
     }
   }
 }
@@ -1247,9 +1252,10 @@ static void vis_apply_attr(Compiler *c, ClassInfo *cls, int call, int kind) {
    visibility (default public). Handles a bare `private`/`protected`/`public`
    (switches the mode for following defs/attrs), the `private :a, :b` /
    `private def m;end` / `private attr_reader :x` argument forms, and plain
-   `def`/`attr_*` declarations under the active mode. Class (`def self.x`)
-   methods are a separate axis and left alone. */
-static void register_method_visibility_body(Compiler *c, ClassInfo *cls, int body) {
+   `def`/`attr_*` declarations under the active mode. Class methods are a
+   separate axis: `sg` walks a `class << self` body into the class-method
+   table, which `private_class_method` / `public_class_method` also write. */
+static void register_method_visibility_body(Compiler *c, ClassInfo *cls, int body, int sg) {
   const NodeTable *nt = c->nt;
   int n = 0;
   const int *stmts = body >= 0 ? nt_arr(nt, body, "body", &n) : NULL;
@@ -1261,14 +1267,41 @@ static void register_method_visibility_body(Compiler *c, ClassInfo *cls, int bod
     if (sp_streq(sty, "DefNode")) {
       const char *mname = nt_str(nt, s, "name");
       if (mname && nt_ref(nt, s, "receiver") < 0)
-        comp_method_vis_set(cls, mname, cur);
+        vis_record(cls, mname, cur, sg);
+      continue;
+    }
+    if (!sg && sp_streq(sty, "SingletonClassNode")) {
+      int ex = nt_ref(nt, s, "expression");
+      if (ex >= 0 && nt_kind(nt, ex) == NK_SelfNode)
+        register_method_visibility_body(c, cls, nt_ref(nt, s, "body"), 1);
       continue;
     }
     if (!sp_streq(sty, "CallNode") || nt_ref(nt, s, "receiver") >= 0) continue;
     const char *nm = nt_str(nt, s, "name");
     if (!nm) continue;
     const char *dmn = dm_defined_name(nt, s);
-    if (dmn) { comp_method_vis_set(cls, dmn, cur); continue; }
+    if (dmn) { vis_record(cls, dmn, cur, sg); continue; }
+    int ckind = sg ? -1 :
+                sp_streq(nm, "private_class_method") ? SP_VIS_PRIVATE :
+                sp_streq(nm, "public_class_method")  ? SP_VIS_PUBLIC : -1;
+    if (ckind >= 0) {
+      int args = nt_ref(nt, s, "arguments");
+      int an = 0;
+      const int *argv = args >= 0 ? nt_arr(nt, args, "arguments", &an) : NULL;
+      for (int i = 0; i < an; i++) {
+        int en = 1;
+        const int *ev = &argv[i];
+        if (nt_kind(nt, argv[i]) == NK_ArrayNode) ev = nt_arr(nt, argv[i], "elements", &en);
+        for (int j = 0; ev && j < en; j++) {
+          const char *mn = vis_arg_name(nt, ev[j]);
+          /* private_class_method def self.m ... end */
+          if (!mn && nt_kind(nt, ev[j]) == NK_DefNode && nt_ref(nt, ev[j], "receiver") >= 0)
+            mn = nt_str(nt, ev[j], "name");
+          if (mn) comp_cmethod_vis_set(cls, mn, ckind);
+        }
+      }
+      continue;
+    }
     int kind = sp_streq(nm, "private")   ? SP_VIS_PRIVATE   :
                sp_streq(nm, "protected") ? SP_VIS_PROTECTED :
                sp_streq(nm, "public")    ? SP_VIS_PUBLIC : -1;
@@ -1280,16 +1313,16 @@ static void register_method_visibility_body(Compiler *c, ClassInfo *cls, int bod
       for (int i = 0; i < an; i++) {
         const char *aty = nt_type(nt, argv[i]);
         const char *mn = vis_arg_name(nt, argv[i]);
-        if (mn) { comp_method_vis_set(cls, mn, kind); continue; }
+        if (mn) { vis_record(cls, mn, kind, sg); continue; }
         if (aty && sp_streq(aty, "DefNode")) {
           const char *dn = nt_str(nt, argv[i], "name");
           if (dn && nt_ref(nt, argv[i], "receiver") < 0)
-            comp_method_vis_set(cls, dn, kind);
+            vis_record(cls, dn, kind, sg);
         }
         else if (aty && sp_streq(aty, "CallNode")) {
           const char *dn = dm_defined_name(nt, argv[i]);
-          if (dn) comp_method_vis_set(cls, dn, kind);  /* private define_method(:m) { } */
-          else vis_apply_attr(c, cls, argv[i], kind);  /* private attr_reader :x */
+          if (dn) vis_record(cls, dn, kind, sg);  /* private define_method(:m) { } */
+          else vis_apply_attr(c, cls, argv[i], kind, sg);  /* private attr_reader :x */
         }
       }
       continue;
@@ -1299,7 +1332,7 @@ static void register_method_visibility_body(Compiler *c, ClassInfo *cls, int bod
        than resolving up the chain to the ancestor's visibility. */
     if (sp_streq(nm, "attr_reader") || sp_streq(nm, "attr_writer") ||
         sp_streq(nm, "attr_accessor") || sp_streq(nm, "attr"))
-      vis_apply_attr(c, cls, s, cur);
+      vis_apply_attr(c, cls, s, cur, sg);
   }
 }
 
@@ -1309,7 +1342,7 @@ void register_method_visibility(Compiler *c) {
   const NodeTable *nt = c->nt;
   for (int ci = 0; ci < c->nclasses; ci++) {
     ClassInfo *cls = &c->classes[ci];
-    register_method_visibility_body(c, cls, nt_ref(nt, cls->def_node, "body"));
+    register_method_visibility_body(c, cls, nt_ref(nt, cls->def_node, "body"), 0);
   }
   for (int id = 0; id < nt->count; id++) {
     const char *ty = nt_type(nt, id);
@@ -1320,7 +1353,7 @@ void register_method_visibility(Compiler *c) {
     int ci = comp_class_index(c, cname);
     if (ci < 0) continue;
     if (id == c->classes[ci].def_node) continue;  /* canonical body already done */
-    register_method_visibility_body(c, &c->classes[ci], nt_ref(nt, id, "body"));
+    register_method_visibility_body(c, &c->classes[ci], nt_ref(nt, id, "body"), 0);
   }
 }
 
