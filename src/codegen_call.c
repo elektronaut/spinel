@@ -19710,7 +19710,8 @@ int emit_unresolved_call(Compiler *c, int id, Buf *b) {
              counting stands. */
           { Scope *cs4 = &c->scopes[mi];
             int rreq = rest_shortfall_required(c, cs4);
-            if (cs4->rest_idx < 0 ? (cargc > cs4->nparams || cargc < cs4->nrequired)
+            if (cs4->rest_idx < 0 ? (csplat ? cargc - csplat > cs4->nparams
+                                            : (cargc > cs4->nparams || cargc < cs4->nrequired))
                                   : (!csplat && cargc < rreq)) continue; }
           ccls[nc] = k; cmi[nc] = mi; cdef[nc] = dc; cpf[nc] = pfk; nc++;
         }
@@ -19788,9 +19789,22 @@ int emit_unresolved_call(Compiler *c, int id, Buf *b) {
             int ksym = cpf[k] >= 0 ? cpf[k] : cmi[k];
             buf_printf(&cb, "sp_%s_s_%s(", c->classes[cdef[k]].c_name, mc(c->scopes[ksym].name));
             const char *leadk = rarm ? (buf_puts(&cb, rcls), ", ") : emit_cmethod_self_cls_arg(c, ksym, ccls[k], &cb);
+            /* A splat is spread, and its count checked, per arm: in the
+               prelude, the check of a class not taken raised for the one
+               that was (`@k.mk(*args)` reaching mk(x, y) and mk(x, y, z)). */
+            Buf kpre; memset(&kpre, 0, sizeof kpre);
+            Buf *sv_pre = g_pre;
+            if (csplat) g_pre = &kpre;
             emit_args_filled(c, ksym, argsN, leadk, &cb);
+            g_pre = sv_pre;
             emit_cmethod_block_arg(c, id, &c->scopes[ksym], blk_tmp, &cb);
             buf_puts(&cb, ")");
+            if (kpre.len > 0) {
+              Buf wb; memset(&wb, 0, sizeof wb);
+              buf_printf(&wb, "({ %s %s; })", kpre.p, cb.p ? cb.p : "0");
+              free(cb.p); cb = wb;
+            }
+            free(kpre.p);
             TyKind mret = (TyKind)c->scopes[ksym].ret;
             if (mret == TY_POLY) buf_puts(b, cb.p ? cb.p : "sp_box_nil()");
             else emit_boxed_text(c, mret, cb.p ? cb.p : "0", b);
@@ -30851,6 +30865,9 @@ static void emit_call_body(Compiler *c, int id, Buf *b) {
          them. Taken here, the classes that construct normally had no arm. */
       if (sp_streq(name, "new") && comp_ntype(c, id) == TY_POLY) goto skip_cls_cmethod9;
       TyKind uret9 = TY_UNKNOWN; int uret_set9 = 0;
+      int splat9 = 0;
+      for (int a = 0; argv && a < argc; a++)
+        if (nt_kind(nt, argv[a]) == NK_SplatNode) splat9 = 1;
       for (int k = 0; k < c->nclasses; k++) {
         if (is_builtin_reopen(c->classes[k].name)) continue;
         int kmi = comp_cmethod_in_chain(c, k, name, NULL);
@@ -30858,7 +30875,8 @@ static void emit_call_body(Compiler *c, int id, Buf *b) {
         /* Only the candidates this call could actually reach set the return
            type. One that cannot take this many arguments is not a possible
            receiver here, so its return type is not part of the answer. */
-        if (!cls_arm_takes_argc(&c->scopes[kmi], argc)) continue;
+        if (splat9 ? (c->scopes[kmi].rest_idx < 0 && argc - 1 > c->scopes[kmi].nparams)
+                   : !cls_arm_takes_argc(&c->scopes[kmi], argc)) continue;
         ncand9++; defmi9 = kmi;
         TyKind kr = (TyKind)c->scopes[kmi].ret;
         if (!uret_set9) { uret9 = kr; uret_set9 = 1; }
@@ -30874,8 +30892,10 @@ static void emit_call_body(Compiler *c, int id, Buf *b) {
         /* With a block, a candidate taking it -- a yielding one through its
            proc form -- is an arm of the poly receiver's class-tag dispatch,
            which hands the block over as a proc: box the class and take it. */
-        if (!simple9 && comp_ntype(c, id) == TY_POLY && g_n_argov < MAX_ARG_OVERRIDE) {
-          int any_pf9 = 0;
+        /* A splat's count is known only at run time, so is the candidate
+           it reaches: the same dispatch binds it per arm. */
+        if ((!simple9 || splat9) && comp_ntype(c, id) == TY_POLY && g_n_argov < MAX_ARG_OVERRIDE) {
+          int any_pf9 = splat9;
           for (int k = 0; k < c->nclasses && !any_pf9; k++) {
             int kmi = comp_cmethod_in_chain(c, k, name, NULL);
             if (kmi < 0) continue;
