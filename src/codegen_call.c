@@ -20468,26 +20468,94 @@ static int g_setter_value_inner = 0;
    where the typed emission would run the method with a NULL self -- and
    answer, when the method reads no ivar (#5088). The names nil answers
    itself keep their own emission. 0 when the call needs no guard. */
-static int nil_recv_guard(Compiler *c, int id, int *recv_out) {
-  const NodeTable *nt = c->nt;
-  int recv = nt_ref(nt, id, "receiver");
-  if (recv < 0 || nt_kind(nt, recv) != NK_LocalVariableReadNode) return 0;
-  if (nt_str(nt, id, "call_operator") && sp_streq(nt_str(nt, id, "call_operator"), "&.")) return 0;
-  Scope *sc = comp_scope_of(c, recv);
-  const char *ln = nt_str(nt, recv, "name");
-  LocalVar *lv = sc && ln ? scope_local(sc, ln) : NULL;
-  if (!lv || !lv->is_param || !lv->obj_nilable) return 0;
-  TyKind rt = comp_ntype(c, recv);
-  if (!ty_is_object(rt) || comp_ty_value_obj(c, rt)) return 0;
-  const char *nm = nt_str(nt, id, "name");
-  if (!nm) return 0;
+static int nil_answers_call(const char *nm) {
   static const char *const nil_answers[] = {
     "nil?", "to_s", "to_a", "to_h", "to_i", "to_f", "inspect", "==", "!=", "!",
     "===", "=~", "&", "|", "^", "class", "is_a?", "kind_of?", "instance_of?",
     "respond_to?", "frozen?", "freeze", "object_id", "equal?", "eql?", "hash",
     "dup", "clone", "itself", "send", "public_send", "__send__", "tap", "then",
     "instance_variables", "method", "methods", "display", "singleton_class", NULL };
-  for (int i = 0; nil_answers[i]; i++) if (sp_streq(nm, nil_answers[i])) return 0;
+  for (int i = 0; nil_answers[i]; i++) if (sp_streq(nm, nil_answers[i])) return 1;
+  return 0;
+}
+
+/* A call on an Array, Hash or String ivar that initialize does not assign: the
+   slot is nil (NULL) until its first write, and the typed emission stores
+   through or reads the NULL pointer -- `@h[k] = v` ahead of `@h = {}`
+   crashed where CRuby raises NoMethodError. 0 when the call needs no guard. */
+int g_ivar_nil_guarded_id = -1;
+int ivar_nil_recv_guard(Compiler *c, int id, int *recv_out) {
+  const NodeTable *nt = c->nt;
+  int recv = nt_ref(nt, id, "receiver");
+  if (recv < 0 || nt_kind(nt, recv) != NK_InstanceVariableReadNode) return 0;
+  if (nt_str(nt, id, "call_operator") && sp_streq(nt_str(nt, id, "call_operator"), "&.")) return 0;
+  const char *nm = nt_str(nt, id, "name");
+  if (!nm || nil_answers_call(nm)) return 0;
+  TyKind rt = comp_ntype(c, recv);
+  if (ty_is_object(rt)) {
+    /* a user object slot: only a method of its class, as for a param */
+    if (comp_ty_value_obj(c, rt)) return 0;
+    int ocid = ty_object_class(rt);
+    if (comp_method_in_chain(c, ocid, nm, NULL) < 0 && !comp_reader_in_chain(c, ocid, nm, NULL))
+      return 0;
+  }
+  else if (!ty_is_array(rt) && !ty_is_hash(rt) && rt != TY_STRING) return 0;
+  /* a method the program adds to NilClass answers for the nil slot */
+  int ncid = comp_class_index(c, "NilClass");
+  if (ncid >= 0 && comp_method_in_chain(c, ncid, nm, NULL) >= 0) return 0;
+  Scope *s = comp_scope_of(c, recv);
+  int cid = s ? s->class_id : -1;
+  const char *ivn = nt_str(nt, recv, "name");
+  if (cid < 0 || !ivn || ivar_assigned_in_initialize(c, cid, ivn)) return 0;
+  *recv_out = recv;
+  return 1;
+}
+
+/* The guard as a statement ahead of a statement-form emission of call `id`,
+   which runs with g_ivar_nil_guarded_id naming it so it is not guarded twice */
+void emit_ivar_nil_guard(Compiler *c, int id, int recv, Buf *b, int indent) {
+  emit_indent(b, indent);
+  buf_puts(b, "if (("); emit_expr(c, recv, b);
+  buf_printf(b, ") == NULL) sp_raise_nomethod(sp_nomethod_msg(\"%s\", sp_box_nil()));\n",
+             nt_str(c->nt, id, "name"));
+}
+
+/* Run statement emitter `fn` for call `id` behind the ivar nil guard: the
+   guard goes in front only when `fn` handles the call, since a caller that
+   falls back to another emission guards it there. */
+int emit_ivar_nil_guarded(Compiler *c, int id, Buf *b, int indent,
+                          int (*fn)(Compiler *, int, Buf *, int)) {
+  int grecv = -1;
+  if (id == g_ivar_nil_guarded_id || !ivar_nil_recv_guard(c, id, &grecv))
+    return fn(c, id, b, indent);
+  Buf mb; memset(&mb, 0, sizeof mb);
+  int sv = g_ivar_nil_guarded_id; g_ivar_nil_guarded_id = id;
+  int r = fn(c, id, &mb, indent);
+  g_ivar_nil_guarded_id = sv;
+  if (r) emit_ivar_nil_guard(c, id, grecv, b, indent);
+  if (mb.p) buf_puts(b, mb.p);
+  free(mb.p);
+  return r;
+}
+
+static int nil_recv_guard(Compiler *c, int id, int *recv_out) {
+  const NodeTable *nt = c->nt;
+  int recv = nt_ref(nt, id, "receiver");
+  if (recv < 0) return 0;
+  if (nt_str(nt, id, "call_operator") && sp_streq(nt_str(nt, id, "call_operator"), "&.")) return 0;
+  const char *nm = nt_str(nt, id, "name");
+  if (!nm || nil_answers_call(nm)) return 0;
+  TyKind rt = comp_ntype(c, recv);
+  if (nt_kind(nt, recv) == NK_InstanceVariableReadNode) {
+    if (id == g_ivar_nil_guarded_id) return 0;
+    return ivar_nil_recv_guard(c, id, recv_out);
+  }
+  if (nt_kind(nt, recv) != NK_LocalVariableReadNode) return 0;
+  Scope *sc = comp_scope_of(c, recv);
+  const char *ln = nt_str(nt, recv, "name");
+  LocalVar *lv = sc && ln ? scope_local(sc, ln) : NULL;
+  if (!lv || !lv->is_param || !lv->obj_nilable) return 0;
+  if (!ty_is_object(rt) || comp_ty_value_obj(c, rt)) return 0;
   int cid = ty_object_class(rt);
   if (comp_method_in_chain(c, cid, nm, NULL) < 0 && !comp_reader_in_chain(c, cid, nm, NULL))
     return 0;
@@ -20500,12 +20568,33 @@ void emit_call(Compiler *c, int id, Buf *b) {
   int grecv = -1;
   int guard = nil_recv_guard(c, id, &grecv);
   if (guard) {
-    buf_puts(b, "(("); emit_expr(c, grecv, b);
-    buf_printf(b, ") == NULL ? sp_raise_nomethod(sp_nomethod_msg(\"%s\", sp_box_nil())) : (void)0, ",
-               nt_str(c->nt, id, "name"));
+    /* A call whose emission hoists its work (an iterator's loop) into
+       g_pre reads the receiver there, so the guard goes in front of that
+       work rather than around the expression left behind. */
+    size_t pre0 = g_pre ? g_pre->len : 0;
+    Buf cb; memset(&cb, 0, sizeof cb);
+    emit_call_held(c, id, &cb);
+    if (g_pre && g_pre->len > pre0) {
+      Buf gb; memset(&gb, 0, sizeof gb);
+      emit_ivar_nil_guard(c, id, grecv, &gb, g_indent);
+      Buf rest; memset(&rest, 0, sizeof rest);
+      buf_puts(&rest, g_pre->p + pre0);
+      g_pre->len = pre0; g_pre->p[pre0] = 0;
+      buf_puts(g_pre, gb.p ? gb.p : "");
+      buf_puts(g_pre, rest.p);
+      free(gb.p); free(rest.p);
+      buf_puts(b, cb.p ? cb.p : "");
+    }
+    else {
+      buf_puts(b, "(("); emit_expr(c, grecv, b);
+      buf_printf(b, ") == NULL ? sp_raise_nomethod(sp_nomethod_msg(\"%s\", sp_box_nil())) : (void)0, ",
+                 nt_str(c->nt, id, "name"));
+      buf_puts(b, cb.p ? cb.p : "");
+      buf_puts(b, ")");
+    }
+    free(cb.p);
   }
-  emit_call_held(c, id, b);
-  if (guard) buf_puts(b, ")");
+  else emit_call_held(c, id, b);
   g_nd_call_id = nd_saved;
   /* an emitter that made a switch or reached for the boxed value said so;
      anything else bound the call statically, unless the receiver is a boxed

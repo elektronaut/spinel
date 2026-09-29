@@ -869,6 +869,11 @@ const char *raise_tail_value_c(Compiler *c, TyKind t);
 void emit_bigint_operand_ext(Compiler *c, int node, Buf *b);
 const char *nil_value(TyKind t);
 int cvar_defined_probed(Compiler *c, const char *nm);
+extern int g_ivar_nil_guarded_id;
+int ivar_nil_recv_guard(Compiler *c, int id, int *recv_out);
+void emit_ivar_nil_guard(Compiler *c, int id, int recv, Buf *b, int indent);
+int emit_ivar_nil_guarded(Compiler *c, int id, Buf *b, int indent,
+                          int (*fn)(Compiler *, int, Buf *, int));
 void emit_cvar_set_flag(Compiler *c, int cid, const char *nm, int as_expr, Buf *b);
 const char *local_init_value(Compiler *c, LocalVar *lv);
 int local_nil_test(Compiler *c, LocalVar *lv, const char *ref, Buf *out);
