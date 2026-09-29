@@ -2977,7 +2977,7 @@ static TyKind infer_call_inner(Compiler *c, int id) {
          class-tag dispatch, which answers poly */
       int has_splat = 0;
       for (int a = 0; argv && a < argc; a++)
-        if (nt_kind(nt, argv[a]) == NK_SplatNode) has_splat = 1;
+        if (nt_kind(nt, argv[a]) == NK_SplatNode) has_splat++;
       const PolyCand *ccs = recv_is_var ? comp_cmethod_candidates(c, name, &ncc) : NULL;
       for (int ki = 0; ki < ncc; ki++) {
         int k = ccs[ki].cls;
@@ -3000,7 +3000,7 @@ static TyKind infer_call_inner(Compiler *c, int id) {
         int rest_ok = rest_packable_arm(c, &c->scopes[kmi]);
         if ((c->scopes[kmi].rest_idx >= 0 && !rest_ok) || c->scopes[kmi].yields ||
             (c->scopes[kmi].blk_param && c->scopes[kmi].blk_param[0])) { nc = 0; nblk = 0; break; }
-        if (has_splat ? (c->scopes[kmi].rest_idx < 0 && argc - 1 > c->scopes[kmi].nparams)
+        if (has_splat ? (c->scopes[kmi].rest_idx < 0 && argc - has_splat > c->scopes[kmi].nparams)
                       : (argc < c->scopes[kmi].nrequired ||
                          (c->scopes[kmi].rest_idx < 0 && argc > c->scopes[kmi].nparams))) continue;
         nc++;

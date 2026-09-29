@@ -19674,12 +19674,12 @@ int emit_unresolved_call(Compiler *c, int id, Buf *b) {
         int ncap = c->nclasses > 0 ? c->nclasses : 1;
         int *ccls = malloc(sizeof(int) * 4 * (size_t)ncap);
         int *cmi = ccls + ncap, *cdef = cmi + ncap, *cpf = cdef + ncap, nc = 0;
-        int cargc = 0, csplat = 0;
+        int cargc = 0, csplat = 0, cpos_splats = 0;
         { int ca = nt_ref(nt, id, "arguments");
           const int *cav = ca >= 0 ? nt_arr(nt, ca, "arguments", &cargc) : NULL;
           for (int a = 0; a < cargc; a++) {
             const char *aty5 = cav ? nt_type(nt, cav[a]) : NULL;
-            if (aty5 && sp_streq(aty5, "SplatNode")) csplat = 1;
+            if (aty5 && sp_streq(aty5, "SplatNode")) { csplat = 1; cpos_splats++; }
             /* a double splat: the raise stands down for it, a plain keyword
                hash still counts as one positional */
             if (aty5 && sp_streq(aty5, "KeywordHashNode")) {
@@ -19710,7 +19710,7 @@ int emit_unresolved_call(Compiler *c, int id, Buf *b) {
              counting stands. */
           { Scope *cs4 = &c->scopes[mi];
             int rreq = rest_shortfall_required(c, cs4);
-            if (cs4->rest_idx < 0 ? (csplat ? cargc - csplat > cs4->nparams
+            if (cs4->rest_idx < 0 ? (csplat ? cargc - (cpos_splats ? cpos_splats : 1) > cs4->nparams
                                             : (cargc > cs4->nparams || cargc < cs4->nrequired))
                                   : (!csplat && cargc < rreq)) continue; }
           ccls[nc] = k; cmi[nc] = mi; cdef[nc] = dc; cpf[nc] = pfk; nc++;
@@ -30867,7 +30867,7 @@ static void emit_call_body(Compiler *c, int id, Buf *b) {
       TyKind uret9 = TY_UNKNOWN; int uret_set9 = 0;
       int splat9 = 0;
       for (int a = 0; argv && a < argc; a++)
-        if (nt_kind(nt, argv[a]) == NK_SplatNode) splat9 = 1;
+        if (nt_kind(nt, argv[a]) == NK_SplatNode) splat9++;
       for (int k = 0; k < c->nclasses; k++) {
         if (is_builtin_reopen(c->classes[k].name)) continue;
         int kmi = comp_cmethod_in_chain(c, k, name, NULL);
@@ -30875,7 +30875,7 @@ static void emit_call_body(Compiler *c, int id, Buf *b) {
         /* Only the candidates this call could actually reach set the return
            type. One that cannot take this many arguments is not a possible
            receiver here, so its return type is not part of the answer. */
-        if (splat9 ? (c->scopes[kmi].rest_idx < 0 && argc - 1 > c->scopes[kmi].nparams)
+        if (splat9 ? (c->scopes[kmi].rest_idx < 0 && argc - splat9 > c->scopes[kmi].nparams)
                    : !cls_arm_takes_argc(&c->scopes[kmi], argc)) continue;
         ncand9++; defmi9 = kmi;
         TyKind kr = (TyKind)c->scopes[kmi].ret;

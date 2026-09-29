@@ -54,3 +54,22 @@ end
 k = [A, B][1]
 args = [5, 6]
 p k.mk(*args).s
+
+# several splats in one call each spread
+class SplA
+  def self.zero = :a0
+  def self.two(x, y) = [:a, x, y]
+end
+class SplB
+  def self.zero = :b0
+  def self.two(x, y) = [:b, x, y]
+end
+class SplH
+  def initialize(k) = @k = k
+  def run
+    e = []
+    one = [1]
+    [@k.zero(*e, *e), @k.two(*one, *[2])]
+  end
+end
+p SplH.new(SplA).run, SplH.new(SplB).run

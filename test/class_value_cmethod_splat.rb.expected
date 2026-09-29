@@ -10,3 +10,5 @@
 30
 "wrong number of arguments (given 3, expected 2)"
 30
+[:a0, [:a, 1, 2]]
+[:b0, [:b, 1, 2]]
