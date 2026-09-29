@@ -3607,13 +3607,17 @@ int gvar_seeded_before_read(Compiler *c, const char *gname) {
 
 /* A global with no nil of its own that something could read before its first
    assignment boxes, as one written nil does: the read is nil. The interpreter's
-   own flags keep their preset value. */
+   own flags instead start false, so their slot holds a Boolean too. */
 static int gvar_implicit_nil_writes(Compiler *c) {
   int changed = 0;
   for (int g = 0; g < c->ngvars; g++) {
     LocalVar *lv = &c->gvars[g];
+    if (lv->name && (sp_streq(lv->name, "VERBOSE") || sp_streq(lv->name, "DEBUG"))) {
+      TyKind ft = ty_unify(lv->type, TY_BOOL);
+      if (ft != lv->type) { lv->type = ft; changed = 1; }
+      continue;
+    }
     if (!lv->name || nil_write_type(lv->type) == lv->type) continue;
-    if (sp_streq(lv->name, "VERBOSE") || sp_streq(lv->name, "DEBUG")) continue;
     char g0 = lv->name[0];
     if (!((g0 >= 'a' && g0 <= 'z') || (g0 >= 'A' && g0 <= 'Z') || g0 == '_')) continue;
     if (gvar_seeded_before_read(c, lv->name)) continue;
