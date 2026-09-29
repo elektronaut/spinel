@@ -7125,6 +7125,28 @@ int first_yield(Compiler *c, int si) {
 
 /* Arguments node of the first `<&block-param>.call(...)` in scope `si`, or
    -1. Lets block-param inference treat block.call like a yield. */
+/* The union of argument `k` over every `<&block-param>.call(...)` in scope
+   `si` except the one whose arguments node is `skip`. */
+static TyKind other_block_calls_arg_type(Compiler *c, int si, int skip, int k) {
+  const NodeTable *nt = c->nt;
+  const char *bp = c->scopes[si].blk_param;
+  TyKind t = TY_UNKNOWN;
+  if (!bp || !bp[0]) return t;
+  NT_FOREACH_KIND(nt, NK_CallNode, id) {
+    if (c->nscope[id] != si) continue;
+    const char *nm = nt_str(nt, id, "name");
+    int recv = nt_ref(nt, id, "receiver");
+    if (!nm || !sp_streq(nm, "call") || recv < 0 || nt_kind(nt, recv) != NK_LocalVariableReadNode) continue;
+    const char *rn = nt_str(nt, recv, "name");
+    if (!rn || !sp_streq(rn, bp)) continue;
+    int a = nt_ref(nt, id, "arguments");
+    if (a == skip) continue;
+    int n = 0; const int *av = a >= 0 ? nt_arr(nt, a, "arguments", &n) : NULL;
+    if (k < n) t = ty_unify(t, infer_type(c, av[k]));
+  }
+  return t;
+}
+
 int first_block_call_args(Compiler *c, int si) {
   if (si < 0 || si >= c->nscopes) return -1;
   Scope *m = &c->scopes[si];
@@ -10350,6 +10372,10 @@ int infer_block_params(Compiler *c) {
               const int *_yv2 = _ya2 >= 0 ? nt_arr(nt, _ya2, "arguments", &_yc2) : NULL;
               if (k < _yc2) at = ty_unify(at, infer_type(c, _yv2[k]));
             }
+            /* ...and every `<&blk>.call(...)` of the method when that is
+               what delivers it: a forwarded `&blk` becomes one per
+               forwarding call, each with its own element type */
+            if (yn < 0) at = ty_unify(at, other_block_calls_arg_type(c, yld_mi, ya, k));
           }
           TyKind m = ty_unify(lv->type, at);
           /* the yield says what the parameter IS; an array kind the usage
