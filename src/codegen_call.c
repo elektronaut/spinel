@@ -7488,6 +7488,13 @@ static int emit_poly_method_dispatch(Compiler *c, int id, Buf *b) {
           buf_puts(b, "; }\nelse ");
           break;
         }
+        /* a bare `puts` writes one newline and answers nil */
+        if (sp_streq(name, "puts")) {
+          buf_printf(b, "if (_t%d.tag == SP_TAG_OBJ && _t%d.cls_id == SP_BUILTIN_IO) { "
+                         "sp_File_puts((sp_File *)_t%d.v.p, \"\");", tv, tv, tv);
+          if (ret == TY_POLY) buf_printf(b, " _t%d = sp_box_nil();", tr);
+          buf_puts(b, " }\nelse ");
+        }
       }
       /* A zero-arg CONTAINER reduction whose name a user class also owns
          (`TreeNode#sum` next to a real Array's). The switch below covers
@@ -9469,6 +9476,32 @@ static int emit_poly_method_dispatch(Compiler *c, int id, Buf *b) {
           if (ret == TY_POLY) buf_puts(b, ")");
           buf_puts(b, "; break;");
         }
+      }
+      /* print and puts on a poly value: an IO held in the same ivar as a
+         StringIO (a terminal writing to $stdout or to a buffer) reached this
+         dispatch the same way and had no arm, so `@output.print s` raised
+         NoMethodError for the IO. Each argument is boxed and rooted, a
+         String written byte-exact; puts goes through sp_File_puts_val, which
+         spreads an Array one element per line. Both answer nil. */
+      if ((sp_streq(name, "print") || sp_streq(name, "puts")) && argc >= 1 && kwh < 0 && splat_a < 0) {
+        int is_puts = sp_streq(name, "puts");
+        buf_puts(b, " case SP_BUILTIN_IO: { ");
+        for (int a = 0; a < argc; a++) {
+          int pv = ++g_tmp;
+          char an[24]; snprintf(an, sizeof an, "_t%d", atmp[a]);
+          buf_printf(b, "sp_RbVal _t%d = ", pv);
+          if (atmp_ty[a] != TY_POLY) emit_boxed_text(c, atmp_ty[a], an, b);
+          else buf_puts(b, an);
+          buf_printf(b, "; SP_GC_ROOT_RBVAL(_t%d); ", pv);
+          if (is_puts)
+            buf_printf(b, "sp_File_puts_val((sp_File *)_t%d.v.p, _t%d); ", tv, pv);
+          else
+            buf_printf(b, "if (_t%d.tag == SP_TAG_STR) sp_File_write_bin((sp_File *)_t%d.v.p, _t%d.v.s); "
+                           "else if (_t%d.tag != SP_TAG_NIL) sp_File_print((sp_File *)_t%d.v.p, sp_poly_to_s(_t%d)); ",
+                       pv, tv, pv, pv, tv, pv);
+        }
+        if (ret == TY_POLY) buf_printf(b, "_t%d = sp_box_nil(); ", tr);
+        buf_puts(b, "break; }");
       }
       if (is_unshift) {
         /* sp_poly_insert is the kind dispatch for a positional splice, so
