@@ -3571,10 +3571,17 @@ int emit_each_with_index_terminal(Compiler *c, int id, Buf *b) {
 
   if (lv) lv->type = sv; if (li) li->type = si;
 
-  if (is_map || collect_pair || is_toh) buf_printf(b, "_t%d", tres);
-  else if (is_cnt) buf_printf(b, "_t%d", tcnt);
-  else if (is_any || is_all || is_none) buf_printf(b, "_t%d", tflag);
-  else buf_printf(b, "_t%d", ta);   /* each -> receiver */
+  int tout = (is_map || collect_pair || is_toh) ? tres : is_cnt ? tcnt : (is_any || is_all || is_none) ? tflag : ta;
+  /* a call typed poly (a user method of the same name shares the dispatch)
+     answers its value boxed */
+  if (comp_ntype(c, id) == TY_POLY) {
+    TyKind oty = is_map ? (ty_is_array(comp_ntype(c, id)) ? comp_ntype(c, id) : TY_POLY_ARRAY) :
+                 collect_pair ? TY_POLY_ARRAY : is_toh ? toh_ht : is_cnt ? TY_INT :
+                 (is_any || is_all || is_none) ? TY_BOOL : rt;
+    char tx[24]; snprintf(tx, sizeof tx, "_t%d", tout);
+    emit_boxed_text(c, oty, tx, b);
+  }
+  else buf_printf(b, "_t%d", tout);
   return 1;
 }
 
