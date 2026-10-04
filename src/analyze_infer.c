@@ -6594,6 +6594,10 @@ static TyKind infer_call_inner(Compiler *c, int id) {
       int ocls = osc ? osc->class_id : -1;
       int omi = osc && osc->is_cmethod ? comp_cmethod_in_chain(c, ocls, name, NULL)
                                        : comp_method_in_chain(c, ocls, name, NULL);
+      /* a reader nearer than the inherited def is what the call reaches; the
+         implicit-self arm below types it by its ivar */
+      if (omi >= 0 && osc && !osc->is_cmethod &&
+          comp_resolve_member(c, ocls, name, 0, NULL, NULL) == SP_MEMBER_ATTR) omi = -1;
       /* the same answer the implicit-self arm below gives, overrides
          included: codegen's dispatch switches over every descendant's
          override, so the type must hold each of their returns. Answering
