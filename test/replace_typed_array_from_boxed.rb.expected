@@ -10,3 +10,6 @@ true
 [4]
 FrozenError
 [1, 2]
+FrozenError
+["a\u0000b"]
+3
